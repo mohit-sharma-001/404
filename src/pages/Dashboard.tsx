@@ -224,7 +224,7 @@ export const Dashboard: React.FC = () => {
       </main>
 
       {/* 7. Advisory Disclaimer Footer */}
-      <AdvisoryNote />
+      <AdvisoryNote activeChannel={selectedChannel} />
     </div>
   );
 };
