@@ -1,0 +1,36 @@
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python bytecode / Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Project Specific Data & Model Artifacts
+data/raw/*.h5
+data/*.pth
+data/*.pkl
+data/*.db
+data/test_samples/
+cyclone.db
+cyclone_app_colab.zip
+ibtracs.NI.list.v04r01.csv
+
+# Environment & Config
+.env
+.env.local
+.env.*.local
+
+# IDE & System Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

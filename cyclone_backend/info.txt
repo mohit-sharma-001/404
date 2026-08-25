@@ -1,0 +1,181 @@
+================================================================================
+COMPLETE PROJECT WALKTHROUGH & DOCUMENTATION
+TROPICAL CYCLONE IDENTIFICATION, INTENSITY NOWCASTING & TRACK FORECASTING SYSTEM
+================================================================================
+
+1. PROJECT OVERVIEW
+-------------------
+This project is an end-to-end Tropical Cyclone Analysis & Forecasting System. 
+It combines satellite computer vision and historical trajectory machine learning 
+to perform two primary tasks:
+
+1. Intensity Nowcasting (Current Status): Analyzes multi-channel satellite 
+   images (Infrared, Water Vapor, Visible, Passive Microwave) to determine if a 
+   cyclone is present, classify its intensity into official IMD categories, 
+   and estimate its maximum sustained wind speed (in km/h).
+2. 24-Hour & 48-Hour Track Forecasting: Predicts where the cyclone will 
+   travel over the next 24 and 48 hours (Latitude, Longitude coordinates), 
+   its compass heading direction, and distance traveled.
+
+
+2. TECHNOLOGY STACK
+-------------------
+- Language         : Python 3.10+
+- Web Framework    : FastAPI (Asynchronous REST API)
+- Server Engine    : Uvicorn ASGI Server
+- Deep Learning    : PyTorch (torch, torch.nn - CycloneCNN 4-Channel Model)
+- Machine Learning : Scikit-Learn (HistGradientBoostingRegressor, MultiOutputRegressor)
+- Data Processing  : Pandas, NumPy, HDF5 (h5py)
+- Image Processing : PIL (Pillow)
+- Database & ORM   : SQLite with SQLAlchemy ORM
+- Data Validation  : Pydantic schemas
+
+
+3. BEGINNER-FRIENDLY CONCEPT GLOSSARY
+--------------------------------------
+- Nowcasting: Estimating the CURRENT state of the weather right now from 
+  live satellite observations.
+- Forecasting: Predicting the FUTURE state (e.g., 24 or 48 hours from now).
+- Convolutional Neural Network (CNN): A deep learning model that scans satellite 
+  image pixels, detects cloud patterns, storm eyes, and spiral bands, and 
+  extracts features automatically.
+- Classification Head: The output layer of the neural network that assigns the 
+  storm into one of 7 official intensity categories (e.g., Depression, Cyclonic 
+  Storm, Super Cyclonic Storm).
+- Regression Head: The output layer of the neural network that predicts a 
+  continuous numerical number (e.g., Wind Speed = 145.5 km/h).
+- Early-Fusion Preprocessing: Combining multiple satellite channels (Infrared + 
+  Water Vapor + Visible + Microwave) into a single 4-channel tensor before 
+  feeding it into the CNN.
+- Lag Features: Using past historical records (e.g. location 6 hours ago, 12 
+  hours ago) as input features to predict future motion.
+- Haversine Distance: A mathematical formula used to calculate real-world 
+  distance in KILOMETERS between two points on the curved surface of the Earth 
+  using latitude and longitude.
+
+
+4. PROJECT DIRECTORY STRUCTURE
+------------------------------
+404/
+├── app/
+│   ├── main.py                  # FastAPI app initialization and middleware
+│   ├── api/
+│   │   └── routes.py            # API endpoints (/predict, /predict-track, /history)
+│   ├── core/
+│   │   ├── config.py            # Configuration settings & file paths
+│   │   └── preprocessing.py     # Satellite image normalization & 4-channel fusion
+│   ├── models/
+│   │   ├── inference.py         # CycloneCNN model architecture & intensity prediction
+│   │   ├── track_inference.py   # Track prediction model loading & forecast engine
+│   │   └── schema.py            # Pydantic schemas for API request/response validation
+│   ├── db/
+│   │   ├── database.py          # SQLite database connection setup
+│   │   └── models_db.py         # Database tables (PredictionHistory)
+│   └── training/
+│       ├── dataset_loader.py    # TCIR HDF5 dataset loader
+│       ├── train.py             # CNN model training script
+│       ├── track_dataset.py     # IBTrACS CSV preprocessor & lag feature engineer
+│       └── train_track.py       # Track model training & evaluation script
+├── data/
+│   ├── track_model.pkl          # Saved trained track prediction model artifact
+│   ├── model_checkpoint.pth     # Saved trained CNN intensity model weights
+│   ├── test_samples/            # Sample PNG satellite images for testing
+│   └── raw/                     # Raw TCIR HDF5 satellite datasets
+├── ibtracs.NI.list.v04r01.csv   # Official NOAA IBTrACS North Indian Ocean dataset
+├── info.txt                     # Complete project walkthrough & reference
+├── test_full_system.py          # Unified terminal test script (Nowcast + Forecast)
+├── test_track_cli.py            # Interactive CLI track prediction tester
+└── requirements.txt             # Project dependencies
+
+
+5. HOW EVERYTHING WORKS (STEP-BY-STEP WORKFLOW)
+------------------------------------------------
+Step 1: Input Data Intake
+- User/API uploads satellite imagery (IR, WV, VIS, PMW) and/or inputs current 
+  and historical cyclone latitude & longitude points.
+
+Step 2: Satellite Image Preprocessing (app/core/preprocessing.py)
+- Resizes uploaded images to 224x224 pixels, normalizes pixel intensity values 
+  between 0 and 1, and stacks channels into a 4-channel tensor (1, 4, 224, 224).
+
+Step 3: Intensity Nowcast CNN Inference (app/models/inference.py)
+- Passes 4-channel tensor through 4 Conv2D + BatchNorm + MaxPool layers.
+- Classification Head predicts intensity category probabilities via Softmax.
+- Regression Head predicts max wind speed in km/h.
+
+Step 4: Track Feature Engineering & Forecast (app/models/track_inference.py)
+- Reads historical displacement vectors (past 6h, 12h, 24h lags) and motion angles.
+- MultiOutput HistGradientBoosting Regressors predict spatial offsets 
+  dLat_24h, dLon_24h, dLat_48h, dLon_48h.
+- Calculates projected coordinates, distance in km (Haversine formula), and 
+  compass direction heading.
+
+Step 5: API Response Generation (app/api/routes.py)
+- Combines Nowcast & Forecast payloads into JSON response and saves transaction 
+  record to SQLite database history.
+
+
+6. FINAL MODEL ACCURACY & PERFORMANCE METRICS
+----------------------------------------------
+A. Intensity Nowcasting CNN Model:
+- Task: 7-Class Intensity Category Classification & Wind Speed Regression.
+- Categories: Depression, Deep Depression, Cyclonic Storm, Severe Cyclonic 
+  Storm, Very Severe Cyclonic Storm, Extremely Severe Cyclonic Storm, Super 
+  Cyclonic Storm.
+
+B. Track Forecasting Model (NOAA IBTrACS North Indian Ocean Dataset):
+- Dataset: 62,800+ historical track observation points.
+- Train / Test Split: Trained on pre-2021 storms (28,935 samples), evaluated 
+  on held-out 2021-2025 test storms (991 samples).
+
+Global Performance Summary:
+- 24-Hour Track Forecast Median Distance Error : 98.89 km (Mean: 115.72 km)
+- 48-Hour Track Forecast Median Distance Error : 244.29 km (Mean: 274.62 km)
+- 24-Hour Accuracy within 100 km Radius        : 50.6%
+- 24-Hour Accuracy within 150 km Radius        : 74.0%
+- 48-Hour Accuracy within 250 km Radius        : 52.3%
+
+Individual Cyclone Test Accuracy Breakdown:
+- Cyclone TAUKTAE (2021) : 72.98 km (24h Error) | 197.08 km (48h Error)
+- Cyclone DANA (2024)    : 75.48 km (24h Error) | 207.30 km (48h Error)
+- Cyclone REMAL (2024)   : 76.47 km (24h Error) | 142.66 km (48h Error)
+- Cyclone ASNA (2024)    : 76.81 km (24h Error) | 168.16 km (48h Error)
+- Cyclone MICHAUNG (2023): 81.34 km (24h Error) | 210.13 km (48h Error)
+- Cyclone MOCHA (2023)   : 86.23 km (24h Error) | 165.70 km (48h Error)
+- Cyclone BIPARJOY (2023): 87.81 km (24h Error) | 222.53 km (48h Error)
+- Cyclone JAWAD (2021)   : 88.57 km (24h Error) | 221.34 km (48h Error)
+- Cyclone ASANI (2022)   : 96.89 km (24h Error) | 273.14 km (48h Error)
+- Cyclone YAAS (2021)    : 100.64 km (24h Error)| 285.29 km (48h Error)
+- Cyclone HAMOON (2023)  : 108.23 km (24h Error)| 285.53 km (48h Error)
+- Cyclone GULAB (2021)   : 110.81 km (24h Error)| 303.61 km (48h Error)
+
+
+7. STEP-BY-STEP ACCURACY CALCULATION MATH
+-------------------------------------------
+1. 3-Hour Timesteps: Data is logged every 3 hours. 24h forecast targets row 
+   (t + 8 steps). 48h forecast targets row (t + 16 steps).
+2. Haversine Distance Formula: Real-world distance error in kilometers is 
+   calculated using:
+   d = 2 * R * asin(sqrt(sin^2(dLat/2) + cos(Lat1)*cos(Lat2)*sin^2(dLon/2)))
+   where R = 6371.0 km.
+3. Median Distance Error: 50th percentile of distance errors across all test 
+   samples (98.89 km at 24 hours).
+
+
+8. QUICK START & EXECUTION COMMANDS
+------------------------------------
+1. Run Full System Terminal Tester (Satellite Intensity + Track Forecast):
+   python test_full_system.py
+
+2. Run Interactive CLI Track Prediction Tester:
+   python test_track_cli.py
+
+3. Re-train Track Prediction Model & View Per-Storm Accuracy Table:
+   python app/training/train_track.py
+
+4. Run FastAPI Backend Web Server:
+   uvicorn app.main:app --reload
+
+5. Access Interactive API Documentation (Swagger UI):
+   http://127.0.0.1:8000/docs
+================================================================================
