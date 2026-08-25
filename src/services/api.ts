@@ -9,7 +9,7 @@ import type {
 import { INITIAL_MOCK_HISTORY } from '../data/mockPrediction';
 import { getIMDCategoryFromWindSpeed } from '../data/cycloneCategories';
 
-const rawBaseUrl = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000';
+const rawBaseUrl = (import.meta.env.VITE_API_BASE_URL as string) || 'https://vayunetra-lttv.onrender.com';
 const API_BASE_URL = rawBaseUrl.replace(/\/+$/, '');
 
 export interface AnalyzeCycloneParams {
