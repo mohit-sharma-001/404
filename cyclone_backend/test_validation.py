@@ -21,12 +21,12 @@ def run_test():
     is_valid_ir, reason_ir = check_valid_satellite_image(colorful_bytes, source_type="IR")
     print(f"Test 1 [IR  source with color image] -> Valid: {is_valid_ir} | Reason: '{reason_ir}'")
     
-    # Test 2: Uploading same colorful photo as VIS file (should pass relaxed VIS check)
+    # Test 2: Uploading non-satellite synthetic color image as VIS file (should fail non-satellite check)
     is_valid_vis, reason_vis = check_valid_satellite_image(colorful_bytes, source_type="VIS")
-    print(f"Test 2 [VIS source with color image] -> Valid: {is_valid_vis} | Reason: '{reason_vis}'")
+    print(f"Test 2 [VIS source with non-satellite color image] -> Valid: {is_valid_vis} | Reason: '{reason_vis}'")
 
-    assert is_valid_ir == False, "IR check should fail for color image!"
-    assert is_valid_vis == True, "VIS check should pass for color image!"
+    assert is_valid_ir == False, "IR check should fail for non-satellite color image!"
+    assert is_valid_vis == False, "VIS check should fail for non-satellite color photo!"
     
     print("\n✅ All validation tests passed successfully!")
 

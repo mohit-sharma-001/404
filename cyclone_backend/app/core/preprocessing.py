@@ -24,86 +24,81 @@ from PIL import Image
 
 
 def check_valid_satellite_image(image_bytes: bytes, source_type: str = "IR") -> tuple[bool, str]:
-    """Inspects image dimensions, overall pixel variance, and color variance across R, G, B channels
-    to determine if it resembles valid satellite imagery for the specified source_type ("IR", "WV", "VIS", "PMW").
-
-    Checks:
-    1. Unusually small dimensions (below 50x50 pixels) - Applies to all source types.
-    2. Solid single color / blank image (near-zero overall variance) - Applies to all source types.
-    3. Source-specific validation:
-       - "IR", "WV", "PMW": Strict grayscale check (mean RGB std > 12.0 fails).
-       - "VIS": Relaxed check — visible-channel images can legitimately be full-color (true-color satellite scenes)
-         or grayscale-enhanced. Only flags as invalid if extreme color saturation indicates an artificial or non-satellite scene.
-
-    Returns:
-        (is_likely_valid, reason):
-            - is_likely_valid: False if image fails validation check.
-            - reason: Explanation message if invalid, otherwise empty string.
+    """Master Verification Filter: Inspects image to ensure it is authentic space-borne satellite imagery
+    and strictly rejects all non-satellite images (humans, animals, objects, trees, furniture, sun, maps, etc.).
     """
     try:
         image = Image.open(io.BytesIO(image_bytes))
         width, height = image.size
 
-        # 1. Small dimensions check (below 50x50 pixels)
+        # 1. Dimension check (minimum 50x50)
         if width < 50 or height < 50:
             return (
                 False,
-                f"Image dimensions ({width}x{height}) are unusually small (minimum 50x50 required)",
+                f"Image dimensions ({width}x{height}) are too small for satellite analysis.",
             )
 
         img_rgb = image.convert("RGB")
         img_array = np.array(img_rgb, dtype=np.float32)
 
-        # 2. Solid color / blank image check (near-zero overall variance)
+        # 2. Blank / Solid color check
         overall_std = float(np.std(img_array))
         if overall_std < 1.0:
+            return (False, "Image is a solid single color or blank upload.")
+
+        # 3. White / Light Background check (excessive white background of documents, plots, charts, walls)
+        white_pixels_ratio = float(np.mean(np.all(img_array > 220.0, axis=2)))
+        if white_pixels_ratio > 0.22:
             return (
                 False,
-                "Image appears to be a solid single color or blank upload (near-zero overall variance)",
+                "Non-satellite image detected (excessive white background area of plot/document/wall). Not a satellite image.",
             )
 
-        # 3. Chart / Plot / Document screenshot check (excessive white background area)
-        white_pixels_ratio = float(np.mean(np.all(img_array > 230.0, axis=2)))
-        if white_pixels_ratio > 0.28:
-            return (
-                False,
-                "Uploaded image appears to be a plot, chart, or document screenshot (excessive white background), not satellite imagery.",
-            )
-
-        # 4. Color variance check across channels (detects face photos, UI screenshots, colored world maps)
+        # 4. Color Variance Check across RGB channels
+        # Satellite IR, WV, PMW are single-band grayscale. VIS satellite data has low cloud-ocean color divergence.
+        # Humans, animals, trees, furniture, sun, objects, body parts, and maps have high RGB color std.
         color_std_per_pixel = np.std(img_array, axis=2)
         mean_color_std = float(np.mean(color_std_per_pixel))
         source_type_upper = (source_type or "IR").upper()
 
         if source_type_upper in ["IR", "WV", "PMW"]:
-            if mean_color_std > 8.0:
+            if mean_color_std > 5.0:
                 return (
                     False,
-                    f"Image appears to be a regular color photo or graphic ({mean_color_std:.1f} color std), not grayscale {source_type_upper} satellite data.",
+                    f"Non-satellite color photo detected ({mean_color_std:.1f} color std). {source_type_upper} satellite data must be grayscale thermal imagery.",
                 )
         elif source_type_upper == "VIS":
-            # Visible channel can be true-color satellite, but face photos, UI graphics & maps have distinct non-satellite color std
-            if mean_color_std > 18.0:
+            # Visible channel check for photos of humans, animals, objects, trees, maps
+            if mean_color_std > 12.0:
                 return (
                     False,
-                    f"Visible image appears to be a non-satellite photo, UI screenshot, or colored map ({mean_color_std:.1f} color std).",
+                    f"Non-satellite photo/graphic detected ({mean_color_std:.1f} color std). Upload authentic VIS satellite imagery.",
                 )
 
-        # 5. Spatial Edge & Outline Analysis (detects map boundaries, text fonts, UI cards like 'EXPLORE' buttons)
+        # 5. Non-Satellite Texture & Outline Edge Analysis
+        # Detects object outlines, furniture edges, human shapes, text fonts, map borders, UI elements
         gray = np.mean(img_array, axis=2)
         dx = np.abs(np.diff(gray, axis=1))
         dy = np.abs(np.diff(gray, axis=0))
         mean_edge_intensity = float(np.mean(dx) + np.mean(dy))
 
-        if mean_edge_intensity > 35.0:
+        if mean_edge_intensity > 28.0:
             return (
                 False,
-                "Image detected as an artificial graphic, map layout, or UI screenshot (unnatural sharp outline edges).",
+                "Non-satellite object or graphic detected (unnatural sharp object outlines / map borders / non-cloud texture).",
+            )
+
+        # 6. Satellite Cloud Lightness & Background Check
+        mean_lightness = float(np.mean(gray))
+        if mean_lightness > 210.0 or mean_lightness < 8.0:
+            return (
+                False,
+                "Image lighting does not match space-borne Earth satellite imagery (overexposed or underexposed).",
             )
 
         return (True, "")
     except Exception as e:
-        return (False, f"Unable to analyze image data: {str(e)}")
+        return (False, f"Unable to analyze image file: {str(e)}")
 
 
 def preprocess_single_channel(image_bytes: bytes) -> np.ndarray:
