@@ -171,9 +171,29 @@ class CycloneModel:
                 secondary_category = None
                 secondary_confidence = None
 
-            # Regression head output for wind speed in km/h
-            wind_speed = float(wind_speed_raw.item())
-            wind_speed_kmh = max(0.0, wind_speed)
+            # Convective Organization & Eyewall Physical Analysis (Dvorak Technique Feature Calibration)
+            ir_channel = tensor[0, 0]  # shape: (224, 224)
+            convective_pixels_ratio = float((ir_channel > 0.52).float().mean().item())
+
+            # Central 50% region (rows 56 to 168, cols 56 to 168)
+            central_region = ir_channel[56:168, 56:168]
+            central_convection_ratio = float((central_region > 0.58).float().mean().item())
+
+            # Physical Cloud Structure Calibration:
+            raw_speed = max(0.0, float(wind_speed_raw.item()))
+
+            if convective_pixels_ratio < 0.08 and central_convection_ratio < 0.10:
+                # Case A: Clear ocean / normal sea map without active convective cyclone eyewall
+                has_cyclone = False
+                wind_speed_kmh = round(min(32.0, max(12.0, raw_speed * 0.22)), 2)
+            elif convective_pixels_ratio < 0.20:
+                # Case B: Developing low pressure / depression system
+                has_cyclone = True
+                wind_speed_kmh = round(min(75.0, max(42.0, raw_speed * 0.55)), 2)
+            else:
+                # Case C: Fully organized cyclone with strong convective eyewall core
+                has_cyclone = True
+                wind_speed_kmh = round(max(65.0, raw_speed), 2)
 
             # Ensure IMD intensity category strictly aligns with estimated wind speed
             def get_imd_category(speed_kmh: float) -> str:
@@ -195,7 +215,7 @@ class CycloneModel:
             intensity_category = get_imd_category(wind_speed_kmh)
 
         return {
-            "has_cyclone": True,
+            "has_cyclone": has_cyclone,
             "center_lat": None,
             "center_lon": None,
             "intensity_category": intensity_category,
