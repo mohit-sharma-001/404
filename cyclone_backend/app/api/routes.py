@@ -187,6 +187,13 @@ async def predict_cyclone(
         else:
             warning_message = rare_warn
 
+    # If input is invalid (e.g. plot/chart screenshot or non-satellite photo), mark has_cyclone as False & 0 km/h
+    if not is_valid_input:
+        pred_dict["has_cyclone"] = False
+        pred_dict["estimated_wind_speed_kmh"] = 0.0
+        pred_dict["intensity_category"] = "Depression"
+        pred_dict["confidence"] = 0.0
+
     pred_dict["is_valid_input"] = is_valid_input
     pred_dict["warning_message"] = warning_message
 

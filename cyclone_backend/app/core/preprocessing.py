@@ -62,7 +62,17 @@ def check_valid_satellite_image(image_bytes: bytes, source_type: str = "IR") -> 
                 "Image appears to be a solid single color or blank upload (near-zero overall variance)",
             )
 
-        # 3. Source-specific validation
+        # 3. Chart / Plot / Document screenshot check (excessive white background area)
+        # Satellite IR imagery has space/ocean background (dark/black ~0-50 intensity).
+        # Line graphs, charts, and document screenshots have large white background areas (> 35% pixels > 235).
+        white_pixels_ratio = float(np.mean(img_array > 235.0))
+        if white_pixels_ratio > 0.35:
+            return (
+                False,
+                "Image appears to be a plot, chart, or document screenshot (excessive white background), not satellite imagery.",
+            )
+
+        # 4. Source-specific validation
         source_type_upper = (source_type or "IR").upper()
 
         if source_type_upper in ["IR", "WV", "PMW"]:
