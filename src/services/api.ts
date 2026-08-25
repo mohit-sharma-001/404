@@ -6,7 +6,7 @@ import type {
   TrackPredictionResponseResult,
   UploadedImageFile,
 } from '../types/prediction';
-import { INITIAL_MOCK_HISTORY, MOCK_PREDICTION_RESULTS } from '../data/mockPrediction';
+import { INITIAL_MOCK_HISTORY } from '../data/mockPrediction';
 import { getIMDCategoryFromWindSpeed } from '../data/cycloneCategories';
 
 const rawBaseUrl = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000';
