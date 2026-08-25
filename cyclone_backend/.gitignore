@@ -17,12 +17,14 @@ htmlcov/
 # Project Specific Data & Model Artifacts
 data/raw/*.h5
 data/*.pth
+!data/model_checkpoint.pth
 data/*.pkl
+!data/track_model.pkl
 data/*.db
 data/test_samples/
 cyclone.db
 cyclone_app_colab.zip
-ibtracs.NI.list.v04r01.csv
+!ibtracs.NI.list.v04r01.csv
 
 # Environment & Config
 .env
