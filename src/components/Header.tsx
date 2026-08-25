@@ -37,7 +37,7 @@ export const Header: React.FC<HeaderProps> = ({ activeChannel = 'IR' }) => {
 
           <div>
             <h1 className="text-base sm:text-lg font-bold tracking-wider text-white font-sans uppercase">
-              CYCLONE <span className="font-semibold transition-colors duration-700" style={{ color: theme.accentColor }}>INTELLIGENCE</span>
+              VAYUNETRA <span className="font-semibold transition-colors duration-700" style={{ color: theme.accentColor }}>SYSTEM</span>
             </h1>
           </div>
         </div>

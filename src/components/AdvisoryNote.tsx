@@ -63,7 +63,7 @@ export const AdvisoryNote: React.FC<AdvisoryNoteProps> = ({ activeChannel = 'IR'
               </div>
 
               <p className="text-xs text-slate-300 leading-relaxed font-sans">
-                <strong className="text-white">Cyclone Intelligence</strong> operates as an AI/ML decision-support tool for satellite pattern identification and wind intensity estimation. Tropical cyclone bulletins, official warnings, and public evacuation orders for the North Indian Ocean are issued exclusively by the <strong className="text-slate-100">India Meteorological Department (IMD)</strong>.
+                <strong className="text-white">VAYUNETRA</strong> operates as an AI/ML decision-support tool for satellite pattern identification and wind intensity estimation. Tropical cyclone bulletins, official warnings, and public evacuation orders for the North Indian Ocean are issued exclusively by the <strong className="text-slate-100">India Meteorological Department (IMD)</strong>.
               </p>
             </div>
 
@@ -99,7 +99,7 @@ export const AdvisoryNote: React.FC<AdvisoryNoteProps> = ({ activeChannel = 'IR'
         <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 border-t border-slate-900 pt-6 gap-2 font-mono text-[11px]">
           <div className="flex items-center space-x-2">
             <ShieldCheck className="w-4 h-4" style={{ color: theme.accentColor }} />
-            <span>CYCLONE INTELLIGENCE • Multi-Spectral AI Satellite Processing Platform</span>
+            <span>VAYUNETRA • Multi-Spectral AI Satellite Processing Platform</span>
           </div>
           <div className="text-slate-400">
             INSAT-3D TIR-1, VIS, WV & PMW Satellite Analytics

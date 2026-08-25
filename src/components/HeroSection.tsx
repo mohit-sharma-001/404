@@ -28,7 +28,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ activeChannel = 'IR' }
         <div
           className={`text-xs font-mono font-bold uppercase tracking-widest mb-3 px-3 py-1 rounded-full border transition-colors duration-700 ${theme.badgeStyle}`}
         >
-          {theme.name.toUpperCase()} ({theme.shortCode}) • TROPICAL CYCLONE INTELLIGENCE SYSTEM
+          {theme.name.toUpperCase()} ({theme.shortCode}) • VAYUNETRA TROPICAL CYCLONE SYSTEM
         </div>
 
         {/* Headline */}
