@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Upload, X, FileText, CheckCircle2, Scan } from 'lucide-react';
+import { Upload, X, FileText, CheckCircle2, Scan, AlertTriangle } from 'lucide-react';
 import type { SatelliteChannel, UploadedImageFile } from '../types/prediction';
 import { ChannelDropdown } from './ChannelDropdown';
 import { THEMES } from '../theme/themeSystem';
@@ -15,6 +15,22 @@ interface AdaptiveUploadCardProps {
 const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/jpg'];
 const MAX_FILE_SIZE_MB = 15;
 
+export const detectImageSpectrum = (
+  filename: string,
+  uploadedChannel?: SatelliteChannel
+): SatelliteChannel => {
+  if (uploadedChannel) return uploadedChannel;
+  if (!filename) return 'IR';
+  const upper = filename.toUpperCase();
+  if (upper.includes('_VIS_') || upper.includes('VIS_CYCLONE') || upper.includes('VISIBLE') || upper.includes('0.65')) return 'VIS';
+  if (upper.includes('_WV_') || upper.includes('WV_CYCLONE') || upper.includes('VAPOUR') || upper.includes('VAPOR') || upper.includes('6.8')) return 'WV';
+  if (upper.includes('PMW') || upper.includes('MICROWAVE') || upper.includes('GMI') || upper.includes('89GHZ')) return 'PMW';
+  if (upper.includes('_IR_') || upper.includes('TIR') || upper.includes('INFRARED') || upper.includes('IR_CYCLONE') || upper.includes('ALPHA') || upper.includes('10.8')) return 'IR';
+  
+  // Default spectrum for untagged custom uploads is IR
+  return 'IR';
+};
+
 export const AdaptiveUploadCard: React.FC<AdaptiveUploadCardProps> = ({
   selectedChannel,
   onChannelChange,
@@ -27,6 +43,9 @@ export const AdaptiveUploadCard: React.FC<AdaptiveUploadCardProps> = ({
   const [isDragging, setIsDragging] = useState(false);
 
   const theme = THEMES[selectedChannel] || THEMES.IR;
+
+  const detectedSpectrum = image ? detectImageSpectrum(image.name, image.uploadedChannel) : null;
+  const isSpectrumMismatch = Boolean(detectedSpectrum && detectedSpectrum !== selectedChannel);
 
   // Particle & micro-animation render loop inside upload container
   useEffect(() => {
@@ -64,7 +83,6 @@ export const AdaptiveUploadCard: React.FC<AdaptiveUploadCardProps> = ({
       step += 0.015;
 
       if (selectedChannel === 'IR') {
-        // Metallic Silver Thermal Shimmer & Micro Particles
         particles.forEach((p) => {
           p.x += p.speedX;
           p.y += p.speedY;
@@ -79,7 +97,6 @@ export const AdaptiveUploadCard: React.FC<AdaptiveUploadCardProps> = ({
           ctx.fill();
         });
 
-        // Restrained silver scanning beam line
         const scanY = ((Math.sin(step * 0.6) + 1) / 2) * height;
         ctx.strokeStyle = 'rgba(216, 220, 226, 0.12)';
         ctx.lineWidth = 1;
@@ -89,7 +106,6 @@ export const AdaptiveUploadCard: React.FC<AdaptiveUploadCardProps> = ({
         ctx.stroke();
 
       } else if (selectedChannel === 'VIS') {
-        // Cool Luminous Cyan / Indigo Gradient Wave Movement
         const waveGrad = ctx.createLinearGradient(0, 0, width, height);
         waveGrad.addColorStop(0, 'rgba(0, 229, 255, 0.06)');
         waveGrad.addColorStop(1, 'rgba(124, 77, 255, 0.06)');
@@ -111,7 +127,6 @@ export const AdaptiveUploadCard: React.FC<AdaptiveUploadCardProps> = ({
         });
 
       } else if (selectedChannel === 'WV') {
-        // Deep Atmospheric Moisture Particles & Vapor Flow
         particles.forEach((p) => {
           p.y -= 0.25;
           if (p.y < 0) p.y = height;
@@ -123,7 +138,6 @@ export const AdaptiveUploadCard: React.FC<AdaptiveUploadCardProps> = ({
         });
 
       } else if (selectedChannel === 'PMW') {
-        // Technical Radar Grid & Golden Data Traces
         ctx.strokeStyle = 'rgba(214, 168, 79, 0.08)';
         ctx.lineWidth = 1;
         const gridSize = 40;
@@ -152,7 +166,7 @@ export const AdaptiveUploadCard: React.FC<AdaptiveUploadCardProps> = ({
       animId = requestAnimationFrame(render);
     };
 
-    animId = requestAnimationFrame(render);
+    render();
 
     return () => {
       window.removeEventListener('resize', handleResize);
@@ -160,40 +174,39 @@ export const AdaptiveUploadCard: React.FC<AdaptiveUploadCardProps> = ({
     };
   }, [selectedChannel]);
 
-  const validateAndProcessFile = (file: File) => {
-    if (!ALLOWED_TYPES.includes(file.type) && !file.name.match(/\.(png|jpe?g|webp)$/i)) {
-      onError(`Invalid format. Please upload PNG, JPG, JPEG, or WEBP satellite image.`);
-      return;
+  const validateFile = (file: File): boolean => {
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      onError(`Invalid file format '${file.name}'. Please upload a PNG, JPG, or WEBP image.`);
+      return false;
     }
+    const fileSizeMB = file.size / (1024 * 1024);
+    if (fileSizeMB > MAX_FILE_SIZE_MB) {
+      onError(`File '${file.name}' is too large (${fileSizeMB.toFixed(1)}MB). Max limit is ${MAX_FILE_SIZE_MB}MB.`);
+      return false;
+    }
+    return true;
+  };
 
-    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-      onError(`File size exceeds ${MAX_FILE_SIZE_MB}MB limit.`);
-      return;
-    }
+  const processFile = (file: File) => {
+    if (!validateFile(file)) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-
-      const img = new Image();
-      img.onload = () => {
-        onImageSelect({
-          file,
-          previewUrl: result,
-          name: file.name,
-          sizeBytes: file.size,
-          dimensions: `${img.width} x ${img.height} px`,
-          isPreset: false,
-        });
-      };
-      img.src = result;
+    reader.onload = () => {
+      onImageSelect({
+        file,
+        previewUrl: reader.result as string,
+        name: file.name,
+        sizeBytes: file.size,
+        uploadedChannel: selectedChannel, // Store channel mode active at upload
+      });
     };
     reader.readAsDataURL(file);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) validateAndProcessFile(file);
+    if (e.target.files && e.target.files[0]) {
+      processFile(e.target.files[0]);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -209,163 +222,180 @@ export const AdaptiveUploadCard: React.FC<AdaptiveUploadCardProps> = ({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) validateAndProcessFile(file);
-  };
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processFile(e.dataTransfer.files[0]);
+    }
   };
 
   return (
-    <div
-      className={`relative rounded-2xl border transition-all duration-700 flex flex-col backdrop-blur-2xl shadow-2xl ${
-        theme.cardBg
-      } ${theme.borderColor} ${theme.borderGlow} ${isDragging ? 'ring-2 scale-[1.005]' : ''}`}
-    >
-      {/* Dynamic Mode Micro-Animation Canvas */}
-      <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none z-0 opacity-75 rounded-2xl" />
-
-      {/* Header & Mode Dropdown Selector Bar (NO overflow-hidden so popup drops down smoothly!) */}
-      <div
-        className={`relative z-20 p-5 rounded-t-2xl border-b transition-colors duration-700 flex flex-col md:flex-row md:items-center justify-between gap-4 font-mono ${theme.cardHeaderBg}`}
-      >
-        <div className="flex items-start sm:items-center space-x-3.5">
-          <div
-            className="p-2.5 rounded-xl shrink-0 transition-colors duration-700"
-            style={{
-              backgroundColor: `${theme.accentColor}18`,
-              borderColor: `${theme.accentColor}40`,
-              color: theme.accentColor,
-              borderWidth: 1,
-            }}
-          >
-            {React.createElement(theme.icon, { className: 'w-5 h-5' })}
-          </div>
-          <div>
-            <div className="flex items-center space-x-2.5">
-              <h3 className="text-sm font-bold text-white tracking-wide uppercase">{theme.conceptTitle}</h3>
-              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${theme.badgeStyle}`}>
-                {theme.shortCode}
-              </span>
-            </div>
-            <p className="text-xs text-slate-300 mt-1 font-sans leading-relaxed">{theme.description}</p>
-          </div>
-        </div>
-
-        {/* 100% Reliable Interactive Channel Dropdown */}
-        <div className="shrink-0 relative z-30 pointer-events-auto">
-          <ChannelDropdown selectedChannel={selectedChannel} onSelectChannel={onChannelChange} />
+    <div className="space-y-4">
+      {/* Selector & Channel Info Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <ChannelDropdown
+          selectedChannel={selectedChannel}
+          onSelectChannel={onChannelChange}
+        />
+        <div className="text-xs text-slate-400 font-mono flex items-center space-x-1.5 self-end sm:self-center">
+          <Scan className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Active Instrument Mode: <strong className="text-white">{selectedChannel}</strong></span>
         </div>
       </div>
 
-      {/* Satellite Image Preview / Drag & Drop Ingestion Zone */}
-      <div className="relative z-10 p-6 flex-1 flex flex-col justify-center min-h-[240px]">
-        {image ? (
-          /* Preview Ingested Satellite File */
-          <div className="space-y-4 font-mono animate-in fade-in zoom-in-95 duration-300">
-            <div className="relative group rounded-xl overflow-hidden border border-slate-700/80 bg-[#02050A]/95 aspect-video max-h-[380px] flex items-center justify-center shadow-2xl">
-              <img
-                src={image.previewUrl}
-                alt={`${theme.name} Satellite Channel Preview`}
-                className="w-full h-full object-contain p-2"
-              />
+      {/* Mismatch Warning Alert Banner */}
+      {isSpectrumMismatch && (
+        <div className="p-4 rounded-xl bg-red-950/90 border-2 border-red-500 text-red-200 text-xs font-mono flex items-start space-x-3 shadow-2xl animate-pulse">
+          <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <span className="font-extrabold text-red-300 block text-sm uppercase tracking-wider">
+              🛑 SATELLITE SPECTRUM MISMATCH (ANALYSIS BLOCKED)
+            </span>
+            <p className="text-slate-100">
+              The uploaded satellite image belongs to spectrum <strong className="text-white font-bold">[{detectedSpectrum}]</strong>, which does not fit active channel mode <strong className="text-white font-bold">[{selectedChannel}]</strong>.
+            </p>
+            <p className="text-red-200 text-[11px] font-bold">
+              Only genuine <strong className="text-white">[{selectedChannel}]</strong> satellite images can be predicted under <strong className="text-white">[{selectedChannel}]</strong> mode. Please switch mode to <strong className="text-white">[{detectedSpectrum}]</strong> or upload a valid <strong className="text-white">[{selectedChannel}]</strong> image.
+            </p>
+          </div>
+        </div>
+      )}
 
-              {/* Hover Actions Overlay */}
-              <div className="absolute inset-0 bg-[#02050A]/85 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center space-x-3 pointer-events-auto">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-100 text-xs border border-slate-600 transition-all cursor-pointer font-semibold shadow-lg hover:scale-105"
-                >
-                  Change Image
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onImageSelect(null)}
-                  className="px-4 py-2 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 text-xs border border-red-500/40 transition-all flex items-center space-x-1.5 cursor-pointer font-semibold shadow-lg hover:scale-105"
-                >
-                  <X className="w-3.5 h-3.5" />
-                  <span>Remove</span>
-                </button>
+      {/* Main Drag-and-Drop Ingestion Card */}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        onClick={() => !image && fileInputRef.current?.click()}
+        className={`relative rounded-2xl p-6 sm:p-8 transition-all duration-500 border-2 overflow-hidden cursor-pointer select-none ${
+          isDragging
+            ? `${theme.dropZoneHover} bg-slate-900/90 scale-[1.01]`
+            : image
+            ? isSpectrumMismatch
+              ? 'border-red-500 bg-red-950/20'
+              : 'border-slate-700 bg-[#030814]/90'
+            : 'border-slate-800/80 hover:border-slate-700 bg-[#02050D]/80 hover:bg-[#030814]/80'
+        }`}
+        style={{
+          boxShadow: isDragging
+            ? `0 0 30px ${theme.accentColor}`
+            : isSpectrumMismatch
+            ? '0 0 30px rgba(239, 68, 68, 0.3)'
+            : '0 10px 30px rgba(0,0,0,0.5)',
+        }}
+      >
+        {/* Background Canvas Particles */}
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 pointer-events-none opacity-60 z-0"
+        />
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ALLOWED_TYPES.join(',')}
+          onChange={handleFileChange}
+          className="hidden"
+        />
+
+        <div className="relative z-10">
+          {!image ? (
+            <div className="flex flex-col items-center justify-center text-center space-y-4 py-4">
+              <div
+                className={`p-4 rounded-2xl border transition-transform duration-300 hover:scale-110 ${theme.uploadIconBg} ${theme.badgeStyle}`}
+              >
+                <Upload className="w-8 h-8" style={{ color: theme.accentColor }} />
               </div>
 
-              {/* Mode Badge Overlay */}
-              <div className="absolute top-3 left-3 px-3 py-1 rounded-lg bg-[#02050A]/90 border border-slate-700 text-xs text-slate-200 flex items-center space-x-2 shadow-lg backdrop-blur-md">
-                <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: theme.accentColor }} />
-                <span className="font-bold tracking-wider">{theme.name.toUpperCase()} • {theme.shortCode}</span>
+              <div className="space-y-1">
+                <h3 className="text-base sm:text-lg font-bold text-white tracking-wide">
+                  Drop {selectedChannel} Satellite Image or Click to Browse
+                </h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">
+                  Supports multi-spectral INSAT-3D, GOES, or GPM satellite files (PNG, JPG, WEBP up to 15MB).
+                </p>
               </div>
 
-              {/* Channel Tag Overlay */}
-              <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-md bg-[#02050A]/90 border border-slate-700 text-[11px] text-slate-300 flex items-center space-x-1.5 backdrop-blur-md">
-                <Scan className="w-3.5 h-3.5" style={{ color: theme.accentColor }} />
-                <span>{theme.tag}</span>
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-2 text-[11px] font-mono text-slate-400">
+                <span className="px-2.5 py-1 rounded-md bg-slate-900/80 border border-slate-800">
+                  Target Mode: <strong style={{ color: theme.accentColor }}>{selectedChannel}</strong>
+                </span>
+                <span className="px-2.5 py-1 rounded-md bg-slate-900/80 border border-slate-800">
+                  Max 15MB
+                </span>
               </div>
             </div>
-
-            {/* Ingestion Telemetry Footer */}
-            <div className="p-3.5 rounded-xl bg-[#02050A]/80 border border-slate-800 text-xs text-slate-300 flex items-center justify-between shadow-inner">
-              <div className="flex items-center space-x-2.5 truncate">
-                <FileText className="w-4 h-4 shrink-0" style={{ color: theme.accentColor }} />
-                <span className="truncate font-semibold text-slate-100">{image.name}</span>
-                {image.isPreset && (
-                  <span className="px-2 py-0.5 rounded text-[9px] font-mono bg-slate-800 text-slate-400 border border-slate-700">
-                    PRESET SAMPLE
-                  </span>
-                )}
+          ) : (
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+              {/* Preview Image Thumbnail */}
+              <div className="relative group shrink-0">
+                <img
+                  src={image.previewUrl}
+                  alt="Satellite Upload Preview"
+                  className={`w-36 h-36 sm:w-44 sm:h-44 object-cover rounded-xl border shadow-2xl transition-transform duration-300 group-hover:scale-105 ${
+                    isSpectrumMismatch ? 'border-red-500' : 'border-slate-700'
+                  }`}
+                />
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onImageSelect(null);
+                  }}
+                  className="absolute -top-2 -right-2 p-1.5 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-lg transition-transform hover:scale-110 cursor-pointer"
+                  title="Remove image"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <div className="flex items-center space-x-3 shrink-0 text-slate-400 text-xs">
-                <span>{formatFileSize(image.sizeBytes)}</span>
-                {image.dimensions && <span className="hidden sm:inline border-l border-slate-700 pl-3">{image.dimensions}</span>}
-                <div className="flex items-center space-x-1 text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-md border border-emerald-500/20 text-[10px] font-bold">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>INGESTED</span>
+
+              {/* Upload Meta Information */}
+              <div className="flex-1 space-y-3 text-center md:text-left">
+                <div className={`inline-flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-mono border ${
+                  isSpectrumMismatch
+                    ? 'bg-red-950/80 text-red-300 border-red-500/60'
+                    : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                }`}>
+                  {isSpectrumMismatch ? (
+                    <>
+                      <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                      <span>Spectrum Mismatch (Analysis Blocked)</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Satellite Image Registered ({selectedChannel})</span>
+                    </>
+                  )}
+                </div>
+
+                <div>
+                  <h4 className="text-base font-bold text-white truncate max-w-md font-mono">
+                    {image.name}
+                  </h4>
+                  <p className="text-xs text-slate-400 font-mono mt-0.5">
+                    File Size: {(image.sizeBytes / (1024 * 1024)).toFixed(2)} MB
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 pt-1 text-[11px] font-mono">
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-900 text-slate-300 border border-slate-800 flex items-center space-x-1">
+                    <FileText className="w-3 h-3 text-slate-400" />
+                    <span>Mode: {selectedChannel}</span>
+                  </span>
+                  {detectedSpectrum && (
+                    <span className={`px-2.5 py-1 rounded-lg border flex items-center space-x-1 ${
+                      isSpectrumMismatch
+                        ? 'bg-red-950 text-red-300 border-red-500/60 font-bold'
+                        : 'bg-emerald-950/80 text-emerald-300 border-emerald-500/50'
+                    }`}>
+                      <span>Detected Spectrum: {detectedSpectrum}</span>
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
-          </div>
-        ) : (
-          /* Empty Ingestion Drag & Drop Zone */
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-500 flex flex-col items-center justify-center min-h-[210px] relative overflow-hidden group ${
-              theme.dropZoneBg
-            } ${theme.dropZoneHover} ${isDragging ? `${theme.borderColor} scale-[1.01]` : 'border-slate-800'}`}
-          >
-            <div className={`p-4 rounded-full mb-3 transition-transform duration-300 group-hover:scale-110 shadow-lg ${theme.uploadIconBg}`}>
-              <Upload className={`w-6 h-6 ${theme.uploadIconColor}`} />
-            </div>
-
-            <p className="text-xs font-bold text-slate-100 mb-1 font-mono tracking-wide">
-              [ Click or Drag Satellite Image File ]
-            </p>
-            <p className="text-xs text-slate-400 max-w-md mb-2 leading-relaxed font-sans">
-              {theme.description}
-            </p>
-
-            <div className="flex items-center space-x-2 text-[10px] text-slate-500 font-mono">
-              <span>PNG, JPG, JPEG, WEBP</span>
-              <span>•</span>
-              <span>Max {MAX_FILE_SIZE_MB}MB</span>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/png,image/jpeg,image/jpg,image/webp"
-        onChange={handleFileChange}
-        className="hidden"
-      />
     </div>
   );
 };

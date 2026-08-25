@@ -27,6 +27,7 @@ export const PresetSelector: React.FC<PresetSelectorProps> = ({ onLoadPreset, ac
       sizeBytes: presetData.sizeBytes,
       dimensions: presetData.dimensions,
       isPreset: true,
+      uploadedChannel: channel,
     };
 
     onLoadPreset(channel, imageFile);

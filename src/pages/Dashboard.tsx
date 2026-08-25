@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Play, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Header } from '../components/Header';
 import { HeroSection } from '../components/HeroSection';
-import { AdaptiveUploadCard } from '../components/AdaptiveUploadCard';
+import { AdaptiveUploadCard, detectImageSpectrum } from '../components/AdaptiveUploadCard';
 import { PresetSelector } from '../components/PresetSelector';
 import { PredictionCard } from '../components/PredictionCard';
 import { CategoryScale } from '../components/CategoryScale';
@@ -10,6 +10,7 @@ import { TrackPredictionSection } from '../components/TrackPredictionSection';
 import { HistorySection } from '../components/HistorySection';
 import { AdvisoryNote } from '../components/AdvisoryNote';
 import { ErrorAlert } from '../components/ErrorAlert';
+import { DestructionAlertModal } from '../components/DestructionAlertModal';
 import { TargetCursor } from '../components/effects/TargetCursor';
 import { OceanBackground } from '../components/effects/OceanBackground';
 import { apiService } from '../services/api';
@@ -30,6 +31,12 @@ export const Dashboard: React.FC = () => {
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isDestructionAlertOpen, setIsDestructionAlertOpen] = useState<boolean>(false);
+
+  const detectedSpectrum = uploadedImage ? detectImageSpectrum(uploadedImage.name, uploadedImage.uploadedChannel) : null;
+  const isSpectrumMismatch = Boolean(
+    detectedSpectrum && detectedSpectrum !== selectedChannel
+  );
 
   // Load history on mount
   useEffect(() => {
@@ -61,15 +68,30 @@ export const Dashboard: React.FC = () => {
     setError(null);
   };
 
+  const scrollToTrackSection = () => {
+    const trackEl = document.getElementById('track-section');
+    if (trackEl) {
+      trackEl.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   const handleRunAnalysis = async () => {
     if (!uploadedImage) {
       setError(`Please upload a satellite image for channel ${selectedChannel} or select a sample preset.`);
       return;
     }
 
+    if (isSpectrumMismatch) {
+      setError(
+        `Spectral Mismatch Error: Uploaded image source [${detectedSpectrum}] does not match active mode [${selectedChannel}]. Analysis cannot be run on mismatched satellite imagery. Please upload a valid [${selectedChannel}] satellite image or switch mode to [${detectedSpectrum}].`
+      );
+      return;
+    }
+
     setError(null);
     setStatus('analyzing');
     setPrediction(null);
+    setIsDestructionAlertOpen(false);
 
     // Scroll to prediction section smoothly
     const predictionEl = document.getElementById('prediction-section');
@@ -86,6 +108,11 @@ export const Dashboard: React.FC = () => {
       setPrediction(result);
       setStatus('success');
 
+      // Check if wind speed is 100 km/h or above -> Pop up alert automatically!
+      if (result.windSpeedKmh >= 100) {
+        setIsDestructionAlertOpen(true);
+      }
+
       // Refresh history list
       fetchHistory();
     } catch (err: any) {
@@ -98,6 +125,7 @@ export const Dashboard: React.FC = () => {
     setStatus('idle');
     setPrediction(null);
     setError(null);
+    setIsDestructionAlertOpen(false);
   };
 
   const currentTheme = THEMES[selectedChannel] || THEMES.IR;
@@ -110,6 +138,14 @@ export const Dashboard: React.FC = () => {
 
       {/* Foreground Layer: Target Cursor Component */}
       <TargetCursor color={currentTheme.accentColor} />
+
+      {/* High Wind Speed Destruction Warning Popup Alert Modal */}
+      <DestructionAlertModal
+        isOpen={isDestructionAlertOpen}
+        prediction={prediction}
+        onClose={() => setIsDestructionAlertOpen(false)}
+        onViewTrack={scrollToTrackSection}
+      />
 
       {/* 1. Header & Navigation */}
       <Header activeChannel={selectedChannel} />
@@ -155,26 +191,27 @@ export const Dashboard: React.FC = () => {
           <div className="p-5 rounded-2xl bg-[#03070E]/90 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 backdrop-blur-2xl shadow-2xl">
             <div className="text-xs text-slate-300">
               <span className="font-semibold text-white block">Ready for Analysis Pipeline</span>
-              <span className="text-slate-400 font-mono">
-                {uploadedImage
-                  ? `[${selectedChannel}] Ingested file: ${uploadedImage.name}`
-                  : `Upload a satellite image under mode [${selectedChannel}] or select a preset above`}
-              </span>
-              {selectedChannel !== 'IR' && uploadedImage && (
-                <div className="flex items-center space-x-1.5 text-[10px] text-amber-400 mt-1 font-mono">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  <span>Experimental Multi-Channel Mode (IR model calibrated)</span>
+              {isSpectrumMismatch ? (
+                <div className="flex items-center space-x-1.5 text-xs text-red-400 font-mono font-bold mt-0.5">
+                  <AlertTriangle className="w-4 h-4 text-red-500 animate-pulse shrink-0" />
+                  <span>ANALYSIS BLOCKED: Image spectrum [{detectedSpectrum}] does not match active mode [{selectedChannel}]</span>
                 </div>
+              ) : (
+                <span className="text-slate-400 font-mono">
+                  {uploadedImage
+                    ? `[${selectedChannel}] Ingested file: ${uploadedImage.name}`
+                    : `Upload a satellite image under mode [${selectedChannel}] or select a preset above`}
+                </span>
               )}
             </div>
 
             <button
               type="button"
               onClick={handleRunAnalysis}
-              disabled={!uploadedImage || status === 'analyzing'}
+              disabled={!uploadedImage || status === 'analyzing' || isSpectrumMismatch}
               className={`w-full sm:w-auto px-8 py-3.5 rounded-xl font-bold text-xs font-mono uppercase tracking-wider transition-all duration-300 shadow-xl flex items-center justify-center space-x-2 shrink-0 cursor-pointer select-none active:scale-95 ${
-                !uploadedImage || status === 'analyzing'
-                  ? 'bg-slate-900 text-slate-500 border border-slate-800 cursor-not-allowed opacity-50'
+                !uploadedImage || status === 'analyzing' || isSpectrumMismatch
+                  ? 'bg-red-950/40 text-red-400 border border-red-800/80 cursor-not-allowed opacity-80'
                   : currentTheme.primaryBtn
               }`}
             >
@@ -183,6 +220,8 @@ export const Dashboard: React.FC = () => {
                   <RefreshCw className="w-4 h-4 animate-spin text-current" />
                   <span>Processing {selectedChannel} Analysis...</span>
                 </>
+              ) : isSpectrumMismatch ? (
+                <span>⚠️ Mismatched Spectrum ({detectedSpectrum} vs {selectedChannel})</span>
               ) : (
                 <>
                   <Play className="w-4 h-4 fill-current text-current" />
@@ -205,6 +244,8 @@ export const Dashboard: React.FC = () => {
             status={status}
             prediction={prediction}
             onReset={handleResetAnalysis}
+            onOpenDestructionAlert={() => setIsDestructionAlertOpen(true)}
+            onViewTrack={scrollToTrackSection}
           />
         </section>
 
@@ -214,7 +255,7 @@ export const Dashboard: React.FC = () => {
         </section>
 
         {/* 6. Cyclone Track Prediction Section */}
-        <TrackPredictionSection activeChannel={selectedChannel} />
+        <TrackPredictionSection activeChannel={selectedChannel} prediction={prediction} />
 
         {/* 7. Recent Historical Predictions Log */}
         <section id="history-section">

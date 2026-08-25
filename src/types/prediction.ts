@@ -70,6 +70,7 @@ export interface UploadedImageFile {
   sizeBytes: number;
   dimensions?: string;
   isPreset?: boolean;
+  uploadedChannel?: SatelliteChannel;
 }
 
 export interface UploadedImagesState {

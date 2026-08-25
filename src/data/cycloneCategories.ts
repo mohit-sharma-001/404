@@ -85,3 +85,13 @@ export const getCategoryInfo = (category: CycloneCategoryType): CycloneCategoryI
     CYCLONE_CATEGORIES.find((c) => c.name === category) || CYCLONE_CATEGORIES[0]
   );
 };
+
+export const getIMDCategoryFromWindSpeed = (speedKmh: number): CycloneCategoryType => {
+  if (speedKmh >= 221) return 'Super Cyclonic Storm';
+  if (speedKmh >= 166) return 'Extremely Severe Cyclonic Storm';
+  if (speedKmh >= 118) return 'Very Severe Cyclonic Storm';
+  if (speedKmh >= 89) return 'Severe Cyclonic Storm';
+  if (speedKmh >= 62) return 'Cyclonic Storm';
+  if (speedKmh >= 50) return 'Deep Depression';
+  return 'Depression';
+};

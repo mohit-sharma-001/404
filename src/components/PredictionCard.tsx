@@ -1,21 +1,25 @@
 import React from 'react';
-import { Wind, TrendingUp, TrendingDown, Minus, Layers, Clock, Cpu, Sparkles, RefreshCw, Activity } from 'lucide-react';
+import { Wind, Layers, Clock, Cpu, Sparkles, RefreshCw, Activity, ShieldAlert, Navigation, MapPin, AlertTriangle } from 'lucide-react';
 import type { AnalysisStatus, PredictionResult } from '../types/prediction';
 import { getCategoryInfo } from '../data/cycloneCategories';
 import { ConfidenceIndicator } from './ConfidenceIndicator';
-import { IntensityForecastGraph } from './IntensityForecastGraph';
 import { EmptyState } from './EmptyState';
+import { detectImageSpectrum } from './AdaptiveUploadCard';
 
 interface PredictionCardProps {
   status: AnalysisStatus;
   prediction: PredictionResult | null;
   onReset?: () => void;
+  onOpenDestructionAlert?: () => void;
+  onViewTrack?: () => void;
 }
 
 export const PredictionCard: React.FC<PredictionCardProps> = ({
   status,
   prediction,
   onReset,
+  onOpenDestructionAlert,
+  onViewTrack,
 }) => {
   // 1. Analyzing State
   if (status === 'analyzing') {
@@ -54,7 +58,7 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
             2. Pattern Classification
           </span>
           <span className="px-2.5 py-1 rounded-full bg-slate-900 text-slate-400 border border-slate-800 font-medium">
-            3. Wind Estimation
+            3. Wind Estimation & Track Sync
           </span>
         </div>
       </div>
@@ -68,7 +72,7 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
         <EmptyState
           icon={Activity}
           title="Awaiting Satellite Image Analysis"
-          description="Upload an Infrared (IR) satellite image and optionally a Water Vapour (WV) image, then click 'Run Cyclone Analysis' to evaluate cyclone intensity and pattern classification."
+          description="Upload an Infrared (IR) satellite image and optionally a Water Vapour (WV) image, then click 'Run Cyclone Analysis' to evaluate cyclone classification, high-wind destruction risk, and trajectory prediction."
         />
       </div>
     );
@@ -76,32 +80,15 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
 
   // 3. Success Result State
   const categoryInfo = getCategoryInfo(prediction.category);
+  const isHighWind = prediction.windSpeedKmh >= 100;
 
-  const getTrendBadge = (trend: string) => {
-    switch (trend) {
-      case 'Intensifying':
-        return {
-          icon: TrendingUp,
-          label: 'Intensifying',
-          bg: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
-        };
-      case 'Weakening':
-        return {
-          icon: TrendingDown,
-          label: 'Weakening',
-          bg: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
-        };
-      default:
-        return {
-          icon: Minus,
-          label: 'Steady Intensity',
-          bg: 'bg-slate-800 text-slate-300 border-slate-700',
-        };
-    }
-  };
-
-  const trendBadge = getTrendBadge(prediction.trend);
-  const TrendIcon = trendBadge.icon;
+  const uploadedName = prediction.uploadedImageName || prediction.irImageName || '';
+  const detectedSpectrum = detectImageSpectrum(uploadedName);
+  const isSpectrumMismatch = Boolean(
+    detectedSpectrum &&
+      prediction.channelUsed &&
+      detectedSpectrum !== prediction.channelUsed
+  );
 
   return (
     <div className="rounded-2xl glass-panel p-6 sm:p-7 space-y-6 relative overflow-hidden">
@@ -119,17 +106,85 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
           </div>
         </div>
 
-        {onReset && (
-          <button
-            type="button"
-            onClick={onReset}
-            className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-colors text-xs font-medium flex items-center space-x-1.5 cursor-pointer"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>New Analysis</span>
-          </button>
-        )}
+        <div className="flex items-center space-x-2">
+          {isHighWind && onOpenDestructionAlert && (
+            <button
+              type="button"
+              onClick={onOpenDestructionAlert}
+              className="px-3.5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white border-2 border-red-400 font-mono text-xs font-black uppercase tracking-wider flex items-center space-x-2 cursor-pointer shadow-lg shadow-red-950 animate-bounce"
+            >
+              <ShieldAlert className="w-4 h-4 text-white" />
+              <span>🚨 DESTRUCTION ALERT (≥100 KM/H)</span>
+            </button>
+          )}
+
+          {onReset && (
+            <button
+              type="button"
+              onClick={onReset}
+              className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-colors text-xs font-medium flex items-center space-x-1.5 cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>New Analysis</span>
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Ultra Prominent High Wind Destruction Alert Banner */}
+      {isHighWind && (
+        <div className="p-5 rounded-2xl bg-gradient-to-r from-red-950 via-red-900 to-amber-950 border-2 border-red-500 text-white shadow-2xl shadow-red-950/90 flex flex-col sm:flex-row items-center justify-between gap-4 animate-pulse">
+          <div className="flex items-start space-x-3.5">
+            <div className="p-2.5 rounded-xl bg-red-600 text-white border border-red-400 shrink-0">
+              <ShieldAlert className="w-7 h-7" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="px-2.5 py-0.5 rounded bg-red-500 text-white font-mono text-[10px] font-black uppercase tracking-wider">
+                  HIGH SPEED EMERGENCY
+                </span>
+                <span className="text-xs text-red-200 font-mono font-bold">
+                  Sustained Wind Speed: {prediction.windSpeedKmh} km/h (≥100 km/h)
+                </span>
+              </div>
+              <h4 className="text-base font-extrabold text-white tracking-wide mt-1">
+                ⚠️ SEVERE DESTRUCTION HAZARD WARNING
+              </h4>
+              <p className="text-xs text-red-100 mt-1 leading-relaxed">
+                Extremely high wind speeds of {prediction.windSpeedKmh} km/h detected! High probability of severe structural damage, tree uprooting, power grid failure, and coastal surges.
+              </p>
+            </div>
+          </div>
+
+          {onOpenDestructionAlert && (
+            <button
+              type="button"
+              onClick={onOpenDestructionAlert}
+              className="px-5 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-mono text-xs font-black uppercase tracking-wider shrink-0 cursor-pointer shadow-xl border-2 border-red-300 transition-transform active:scale-95 text-center"
+            >
+              🚨 VIEW FULL DESTRUCTION WARNING
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Spectral Spectrum Mismatch Warning Notice */}
+      {isSpectrumMismatch && (
+        <div className="p-4 rounded-xl bg-amber-950/80 border-2 border-amber-500/80 text-amber-200 text-xs font-mono flex items-start space-x-3 shadow-xl">
+          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold text-amber-300 block text-sm uppercase tracking-wider mb-0.5">
+              ⚠️ Satellite Channel Spectrum Mismatch Notice
+            </span>
+            <p className="text-slate-200">
+              The uploaded image filename <strong className="text-white">[{uploadedName}]</strong> detected as spectrum <strong className="text-amber-300">[{detectedSpectrum}]</strong> does not match active mode <strong className="text-white">[{prediction.channelUsed}]</strong>.
+            </p>
+            <p className="text-amber-300/80 text-[11px] mt-1">
+              For maximum classification precision, ensure the uploaded satellite image fits the selected instrument mode.
+            </p>
+          </div>
+        </div>
+      )}
 
       {prediction.modelNotice && (
         <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs font-mono flex items-start space-x-2.5">
@@ -169,43 +224,56 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
             </p>
           </div>
 
-          {/* Wind Speed & Trend Cards Grid */}
-          <div className="grid grid-cols-2 gap-3">
-            
-            {/* Wind Speed Stat */}
-            <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
-              <div className="flex items-center justify-between text-xs text-slate-400">
-                <span className="flex items-center space-x-1">
-                  <Wind className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Wind Speed</span>
-                </span>
-                <span className="font-mono text-[10px] text-slate-500">3-min avg</span>
-              </div>
-
-              <div className="flex items-baseline space-x-1">
-                <span className="text-2xl font-extrabold text-white font-mono">{prediction.windSpeedKmh}</span>
-                <span className="text-xs text-slate-400 font-medium">km/h</span>
-              </div>
-              
-              <div className="text-[11px] font-mono text-cyan-400">
-                ~ {prediction.windSpeedKnots} knots
-              </div>
+          {/* Ultra Visible Wind Speed Stat Card (Full Width) */}
+          <div className={`p-5 rounded-2xl border transition-all space-y-2 ${
+            isHighWind
+              ? 'border-2 border-red-500 bg-gradient-to-r from-red-950/90 via-red-900/70 to-amber-950/90 shadow-2xl shadow-red-950'
+              : 'border-slate-800 bg-slate-900/80'
+          }`}>
+            <div className="flex items-center justify-between text-xs text-slate-300 font-mono">
+              <span className="flex items-center space-x-1.5">
+                <Wind className={`w-4 h-4 ${isHighWind ? 'text-red-400 animate-pulse' : 'text-cyan-400'}`} />
+                <span className="font-bold uppercase tracking-wider">Estimated Sustained Wind Speed</span>
+              </span>
+              <span className="text-[10px] text-slate-400">3-min avg</span>
             </div>
 
-            {/* Trend Stat */}
-            <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 flex flex-col justify-between">
-              <span className="text-xs text-slate-400">Intensity Trend</span>
+            <div className="flex items-baseline space-x-2">
+              <span className={`text-4xl sm:text-5xl font-black font-mono tracking-tight ${
+                isHighWind ? 'text-red-400 drop-shadow-[0_0_12px_rgba(239,68,68,0.8)]' : 'text-white'
+              }`}>
+                {prediction.windSpeedKmh}
+              </span>
+              <span className="text-lg font-bold text-slate-200">km/h</span>
+              <span className={`text-sm font-mono pl-3 font-bold ${isHighWind ? 'text-red-300' : 'text-cyan-400'}`}>
+                (~ {prediction.windSpeedKnots} knots)
+              </span>
+            </div>
 
-              <div className="flex items-center space-x-2">
-                <div className={`px-2.5 py-1 rounded-lg border text-xs font-semibold flex items-center space-x-1.5 ${trendBadge.bg}`}>
-                  <TrendIcon className="w-3.5 h-3.5" />
-                  <span>{trendBadge.label}</span>
+            {/* If Wind Speed >= 100 km/h, show bold alert badge & button inside wind card */}
+            {isHighWind && (
+              <div className="pt-2 border-t border-red-500/40 space-y-2">
+                <div className="flex items-center justify-between text-xs font-mono font-bold text-red-200">
+                  <span className="flex items-center space-x-1">
+                    <ShieldAlert className="w-4 h-4 text-red-400" />
+                    <span>CRITICAL HIGH SPEED THRESHOLD</span>
+                  </span>
+                  <span className="bg-red-600 text-white text-[10px] px-2 py-0.5 rounded font-black uppercase">
+                    ≥100 KM/H
+                  </span>
                 </div>
+                {onOpenDestructionAlert && (
+                  <button
+                    type="button"
+                    onClick={onOpenDestructionAlert}
+                    className="w-full py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-mono text-xs font-black uppercase tracking-wider flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-lg border border-red-400"
+                  >
+                    <ShieldAlert className="w-4 h-4 text-white" />
+                    <span>OPEN DESTRUCTION HAZARD WARNING</span>
+                  </button>
+                )}
               </div>
-
-              <span className="text-[10px] text-slate-500 font-mono">Short-term pressure gradient</span>
-            </div>
-
+            )}
           </div>
 
           {/* Data Sources Used Badge */}
@@ -232,9 +300,46 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
 
         </div>
 
-        {/* Right Column: Intensity Forecast Graph & Time metadata */}
+        {/* Right Column: Integrated Cyclone Track Forecast Quick View Card & Timestamp */}
         <div className="space-y-4">
-          <IntensityForecastGraph prediction={prediction} />
+
+          {/* Integrated Cyclone Track Forecast Quick View Card */}
+          <div className="p-5 rounded-xl bg-slate-900/80 border border-cyan-500/30 space-y-4">
+            <div className="flex items-center justify-between text-xs font-mono text-cyan-400 border-b border-slate-800 pb-3">
+              <span className="font-bold flex items-center space-x-1.5 uppercase">
+                <Navigation className="w-4 h-4 text-cyan-400" />
+                <span>Frontend Track Prediction Status</span>
+              </span>
+              <span className="bg-cyan-950 px-2 py-0.5 rounded text-[11px] text-cyan-300 border border-cyan-500/30">
+                IBTrACS ML Active
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                <span className="text-slate-400 block text-[10px]">Storm Center Location</span>
+                <span className="text-white font-bold flex items-center space-x-1 mt-0.5">
+                  <MapPin className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span>{(prediction.centerLat || 15.0).toFixed(1)}°N, {(prediction.centerLon || 86.5).toFixed(1)}°E</span>
+                </span>
+              </div>
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                <span className="text-slate-400 block text-[10px]">Trajectory Horizon</span>
+                <span className="text-cyan-300 font-bold block">+24h & +48h Vector Path</span>
+              </div>
+            </div>
+
+            {onViewTrack && (
+              <button
+                type="button"
+                onClick={onViewTrack}
+                className="w-full py-3 rounded-lg bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 border border-cyan-500/40 text-xs font-mono font-bold uppercase tracking-wider flex items-center justify-center space-x-2 transition-colors cursor-pointer"
+              >
+                <Navigation className="w-4 h-4" />
+                <span>View Predicted Path on Map Plane</span>
+              </button>
+            )}
+          </div>
 
           {/* Timestamp & Footnote */}
           <div className="p-3 rounded-xl bg-slate-900/40 border border-slate-800/60 flex items-center justify-between text-xs text-slate-400">

@@ -19,14 +19,6 @@ export const ConfidenceIndicator: React.FC<ConfidenceIndicatorProps> = ({
   featureScores,
   sourcesUsed,
 }) => {
-  const getConfidenceLevel = (val: number) => {
-    if (val >= 90) return { label: 'High Confidence', color: 'text-emerald-400' };
-    if (val >= 75) return { label: 'Moderate Confidence', color: 'text-cyan-400' };
-    return { label: 'Low Confidence', color: 'text-amber-400' };
-  };
-
-  const level = getConfidenceLevel(confidence);
-
   return (
     <div className="rounded-xl bg-slate-950/60 border border-slate-800/80 p-4 space-y-3 font-mono">
       
@@ -36,9 +28,6 @@ export const ConfidenceIndicator: React.FC<ConfidenceIndicatorProps> = ({
           <Gauge className="w-3.5 h-3.5 text-cyan-400" />
           <span className="font-bold tracking-wider uppercase">MODEL CONFIDENCE</span>
         </div>
-        <span className={`text-[11px] font-semibold ${level.color}`}>
-          {level.label}
-        </span>
       </div>
 
       {/* Main Score & Compact Bar */}

@@ -7,6 +7,7 @@ import type {
   UploadedImageFile,
 } from '../types/prediction';
 import { INITIAL_MOCK_HISTORY, MOCK_PREDICTION_RESULTS } from '../data/mockPrediction';
+import { getIMDCategoryFromWindSpeed } from '../data/cycloneCategories';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'http://localhost:8000';
 
@@ -78,9 +79,11 @@ class CycloneApiServiceImpl implements CycloneApiService {
         const data = await response.json();
         const windKmh = Math.round(data.estimated_wind_speed_kmh || 0);
 
+        const category = getIMDCategoryFromWindSpeed(windKmh);
+
         return {
           id: `pred-${Date.now()}`,
-          category: data.intensity_category,
+          category: category,
           windSpeedKmh: windKmh,
           windSpeedKnots: Math.round(windKmh / 1.852),
           confidence: Math.round((data.confidence || 0.9) * 100),

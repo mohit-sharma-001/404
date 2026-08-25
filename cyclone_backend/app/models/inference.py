@@ -175,6 +175,25 @@ class CycloneModel:
             wind_speed = float(wind_speed_raw.item())
             wind_speed_kmh = max(0.0, wind_speed)
 
+            # Ensure IMD intensity category strictly aligns with estimated wind speed
+            def get_imd_category(speed_kmh: float) -> str:
+                if speed_kmh >= 221:
+                    return "Super Cyclonic Storm"
+                elif speed_kmh >= 166:
+                    return "Extremely Severe Cyclonic Storm"
+                elif speed_kmh >= 118:
+                    return "Very Severe Cyclonic Storm"
+                elif speed_kmh >= 89:
+                    return "Severe Cyclonic Storm"
+                elif speed_kmh >= 62:
+                    return "Cyclonic Storm"
+                elif speed_kmh >= 50:
+                    return "Deep Depression"
+                else:
+                    return "Depression"
+
+            intensity_category = get_imd_category(wind_speed_kmh)
+
         return {
             "has_cyclone": True,
             "center_lat": None,

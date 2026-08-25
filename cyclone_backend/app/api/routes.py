@@ -114,8 +114,7 @@ async def predict_cyclone(
             detail="At least one satellite image (IR, WV, VIS, or PMW) is required",
         )
 
-    # 3. Check satellite image characteristics on base image
-    base_bytes = ir_bytes or wv_bytes or vis_bytes or pmw_bytes
+    # 3. Check satellite image characteristics for EACH provided file against its source_type
     base_filename = (
         (ir_file.filename if has_ir else None)
         or (wv_file.filename if has_wv else None)
@@ -124,8 +123,34 @@ async def predict_cyclone(
         or "satellite_image.png"
     )
 
-    is_valid_input, warning_reason = check_valid_satellite_image(base_bytes)
-    warning_message = warning_reason if not is_valid_input else None
+    validation_warnings = []
+    is_valid_input = True
+
+    if has_ir and ir_bytes:
+        is_val, reason = check_valid_satellite_image(ir_bytes, source_type="IR")
+        if not is_val:
+            is_valid_input = False
+            validation_warnings.append(f"IR: {reason}")
+
+    if has_wv and wv_bytes:
+        is_val, reason = check_valid_satellite_image(wv_bytes, source_type="WV")
+        if not is_val:
+            is_valid_input = False
+            validation_warnings.append(f"WV: {reason}")
+
+    if has_vis and vis_bytes:
+        is_val, reason = check_valid_satellite_image(vis_bytes, source_type="VIS")
+        if not is_val:
+            is_valid_input = False
+            validation_warnings.append(f"VIS: {reason}")
+
+    if has_pmw and pmw_bytes:
+        is_val, reason = check_valid_satellite_image(pmw_bytes, source_type="PMW")
+        if not is_val:
+            is_valid_input = False
+            validation_warnings.append(f"PMW: {reason}")
+
+    warning_message = " | ".join(validation_warnings) if validation_warnings else None
 
     # 4. Run Preprocessing & Inference (4 channels: IR, WV, VIS, PMW)
     try:

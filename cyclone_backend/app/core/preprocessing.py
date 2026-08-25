@@ -23,25 +23,28 @@ import torch
 from PIL import Image
 
 
-def check_valid_satellite_image(image_bytes: bytes) -> tuple[bool, str]:
+def check_valid_satellite_image(image_bytes: bytes, source_type: str = "IR") -> tuple[bool, str]:
     """Inspects image dimensions, overall pixel variance, and color variance across R, G, B channels
-    to determine if it resembles valid grayscale satellite imagery.
+    to determine if it resembles valid satellite imagery for the specified source_type ("IR", "WV", "VIS", "PMW").
 
     Checks:
-    1. Unusually small dimensions (below 50x50 pixels).
-    2. Solid single color / blank image (near-zero overall variance).
-    3. Regular color photo vs grayscale satellite imagery (high RGB channel std).
+    1. Unusually small dimensions (below 50x50 pixels) - Applies to all source types.
+    2. Solid single color / blank image (near-zero overall variance) - Applies to all source types.
+    3. Source-specific validation:
+       - "IR", "WV", "PMW": Strict grayscale check (mean RGB std > 12.0 fails).
+       - "VIS": Relaxed check — visible-channel images can legitimately be full-color (true-color satellite scenes)
+         or grayscale-enhanced. Only flags as invalid if extreme color saturation indicates an artificial or non-satellite scene.
 
     Returns:
         (is_likely_valid, reason):
-            - is_likely_valid: False if image fails any validation check.
+            - is_likely_valid: False if image fails validation check.
             - reason: Explanation message if invalid, otherwise empty string.
     """
     try:
         image = Image.open(io.BytesIO(image_bytes))
         width, height = image.size
 
-        # 1. Flag as invalid if image is unusually small (below 50x50 pixels)
+        # 1. Small dimensions check (below 50x50 pixels)
         if width < 50 or height < 50:
             return (
                 False,
@@ -51,7 +54,7 @@ def check_valid_satellite_image(image_bytes: bytes) -> tuple[bool, str]:
         img_rgb = image.convert("RGB")
         img_array = np.array(img_rgb, dtype=np.float32)
 
-        # 2. Flag as invalid if image is a solid single color (near-zero overall variance)
+        # 2. Solid color / blank image check (near-zero overall variance)
         overall_std = float(np.std(img_array))
         if overall_std < 1.0:
             return (
@@ -59,16 +62,35 @@ def check_valid_satellite_image(image_bytes: bytes) -> tuple[bool, str]:
                 "Image appears to be a solid single color or blank upload (near-zero overall variance)",
             )
 
-        # 3. Standard deviation across RGB channels per pixel for color vs grayscale check
-        color_std_per_pixel = np.std(img_array, axis=2)
-        mean_color_std = float(np.mean(color_std_per_pixel))
+        # 3. Source-specific validation
+        source_type_upper = (source_type or "IR").upper()
 
-        COLOR_VARIANCE_THRESHOLD = 12.0
-        if mean_color_std > COLOR_VARIANCE_THRESHOLD:
-            return (
-                False,
-                "Image appears to be a regular color photo, not grayscale satellite imagery",
-            )
+        if source_type_upper in ["IR", "WV", "PMW"]:
+            # Strict grayscale check for sensor channels that are physically single-band/grayscale data
+            color_std_per_pixel = np.std(img_array, axis=2)
+            mean_color_std = float(np.mean(color_std_per_pixel))
+
+            COLOR_VARIANCE_THRESHOLD = 12.0
+            if mean_color_std > COLOR_VARIANCE_THRESHOLD:
+                return (
+                    False,
+                    f"Image appears to be a regular color photo, not grayscale {source_type_upper} satellite data",
+                )
+        elif source_type_upper == "VIS":
+            # Relaxed check for Visible channel (can legitimately be true-color RGB or grayscale)
+            # Only flag if there are obvious non-satellite photo patterns (e.g., extreme saturation in localized patches)
+            img_hsv = image.convert("HSV")
+            hsv_array = np.array(img_hsv, dtype=np.float32)
+            sat_channel = hsv_array[:, :, 1]  # Saturation values (0 to 255)
+
+            mean_saturation = float(np.mean(sat_channel))
+            max_patch_saturation = float(np.percentile(sat_channel, 99))
+
+            if mean_saturation > 185.0 and max_patch_saturation > 245.0:
+                return (
+                    False,
+                    "Visible image appears to be an artificial graphic or non-satellite photo (extreme color saturation)",
+                )
 
         return (True, "")
     except Exception as e:
@@ -160,5 +182,3 @@ def preprocess_multisource(
     tensor = torch.from_numpy(stacked_array).unsqueeze(0)
 
     return tensor, sources_used
-
-
