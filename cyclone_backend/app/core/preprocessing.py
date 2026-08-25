@@ -63,44 +63,43 @@ def check_valid_satellite_image(image_bytes: bytes, source_type: str = "IR") -> 
             )
 
         # 3. Chart / Plot / Document screenshot check (excessive white background area)
-        # Satellite IR imagery has space/ocean background (dark/black ~0-50 intensity).
-        # Line graphs, charts, and document screenshots have large white background areas (> 35% pixels > 235).
-        white_pixels_ratio = float(np.mean(img_array > 235.0))
-        if white_pixels_ratio > 0.35:
+        white_pixels_ratio = float(np.mean(np.all(img_array > 230.0, axis=2)))
+        if white_pixels_ratio > 0.28:
             return (
                 False,
-                "Image appears to be a plot, chart, or document screenshot (excessive white background), not satellite imagery.",
+                "Uploaded image appears to be a plot, chart, or document screenshot (excessive white background), not satellite imagery.",
             )
 
-        # 4. Source-specific validation
+        # 4. Color variance check across channels (detects face photos, UI screenshots, colored world maps)
+        color_std_per_pixel = np.std(img_array, axis=2)
+        mean_color_std = float(np.mean(color_std_per_pixel))
         source_type_upper = (source_type or "IR").upper()
 
         if source_type_upper in ["IR", "WV", "PMW"]:
-            # Strict grayscale check for sensor channels that are physically single-band/grayscale data
-            color_std_per_pixel = np.std(img_array, axis=2)
-            mean_color_std = float(np.mean(color_std_per_pixel))
-
-            COLOR_VARIANCE_THRESHOLD = 12.0
-            if mean_color_std > COLOR_VARIANCE_THRESHOLD:
+            if mean_color_std > 8.0:
                 return (
                     False,
-                    f"Image appears to be a regular color photo, not grayscale {source_type_upper} satellite data",
+                    f"Image appears to be a regular color photo or graphic ({mean_color_std:.1f} color std), not grayscale {source_type_upper} satellite data.",
                 )
         elif source_type_upper == "VIS":
-            # Relaxed check for Visible channel (can legitimately be true-color RGB or grayscale)
-            # Only flag if there are obvious non-satellite photo patterns (e.g., extreme saturation in localized patches)
-            img_hsv = image.convert("HSV")
-            hsv_array = np.array(img_hsv, dtype=np.float32)
-            sat_channel = hsv_array[:, :, 1]  # Saturation values (0 to 255)
-
-            mean_saturation = float(np.mean(sat_channel))
-            max_patch_saturation = float(np.percentile(sat_channel, 99))
-
-            if mean_saturation > 185.0 and max_patch_saturation > 245.0:
+            # Visible channel can be true-color satellite, but face photos, UI graphics & maps have distinct non-satellite color std
+            if mean_color_std > 18.0:
                 return (
                     False,
-                    "Visible image appears to be an artificial graphic or non-satellite photo (extreme color saturation)",
+                    f"Visible image appears to be a non-satellite photo, UI screenshot, or colored map ({mean_color_std:.1f} color std).",
                 )
+
+        # 5. Spatial Edge & Outline Analysis (detects map boundaries, text fonts, UI cards like 'EXPLORE' buttons)
+        gray = np.mean(img_array, axis=2)
+        dx = np.abs(np.diff(gray, axis=1))
+        dy = np.abs(np.diff(gray, axis=0))
+        mean_edge_intensity = float(np.mean(dx) + np.mean(dy))
+
+        if mean_edge_intensity > 35.0:
+            return (
+                False,
+                "Image detected as an artificial graphic, map layout, or UI screenshot (unnatural sharp outline edges).",
+            )
 
         return (True, "")
     except Exception as e:
