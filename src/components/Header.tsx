@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { CloudLightning, Radio } from 'lucide-react';
 import type { SatelliteChannel } from '../types/prediction';
 import { THEMES } from '../theme/themeSystem';
+import { apiService } from '../services/api';
 
 interface HeaderProps {
   activeChannel?: SatelliteChannel;
@@ -9,6 +10,21 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ activeChannel = 'IR' }) => {
   const theme = THEMES[activeChannel] || THEMES.IR;
+  const [isBackendOnline, setIsBackendOnline] = useState<boolean>(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const checkBackend = async () => {
+      const online = await apiService.checkHealth();
+      if (isMounted) setIsBackendOnline(online);
+    };
+    checkBackend();
+    const interval = setInterval(checkBackend, 15000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const scrollToSection = (id: string) => {
     const element = document.getElementById(id);
@@ -67,6 +83,13 @@ export const Header: React.FC<HeaderProps> = ({ activeChannel = 'IR' }) => {
           </button>
           <button
             type="button"
+            onClick={() => scrollToSection('track-section')}
+            className="hover:text-white transition-colors cursor-pointer"
+          >
+            Track Forecast
+          </button>
+          <button
+            type="button"
             onClick={() => scrollToSection('category-scale')}
             className="hover:text-white transition-colors cursor-pointer"
           >
@@ -84,8 +107,10 @@ export const Header: React.FC<HeaderProps> = ({ activeChannel = 'IR' }) => {
         {/* Right: Mode Status Indicator */}
         <div className="flex items-center space-x-2 text-xs font-mono">
           <div className={`flex items-center space-x-1.5 px-3 py-1 rounded-full border transition-colors duration-700 text-slate-300 ${theme.statusPillBg} ${theme.statusPillBorder}`}>
-            <Radio className="w-3.5 h-3.5" style={{ color: theme.accentColor }} />
-            <span className="font-medium text-[11px]">System Ready • {theme.shortCode}</span>
+            <Radio className="w-3.5 h-3.5" style={{ color: isBackendOnline ? '#10b981' : theme.accentColor }} />
+            <span className="font-medium text-[11px]">
+              {isBackendOnline ? 'Backend Online' : 'Local Mode'} • {theme.shortCode}
+            </span>
           </div>
         </div>
 
@@ -93,4 +118,3 @@ export const Header: React.FC<HeaderProps> = ({ activeChannel = 'IR' }) => {
     </header>
   );
 };
-

@@ -6,6 +6,7 @@ import { AdaptiveUploadCard } from '../components/AdaptiveUploadCard';
 import { PresetSelector } from '../components/PresetSelector';
 import { PredictionCard } from '../components/PredictionCard';
 import { CategoryScale } from '../components/CategoryScale';
+import { TrackPredictionSection } from '../components/TrackPredictionSection';
 import { HistorySection } from '../components/HistorySection';
 import { AdvisoryNote } from '../components/AdvisoryNote';
 import { ErrorAlert } from '../components/ErrorAlert';
@@ -212,7 +213,10 @@ export const Dashboard: React.FC = () => {
           <CategoryScale predictedCategory={prediction?.category} />
         </section>
 
-        {/* 6. Recent Historical Predictions Log */}
+        {/* 6. Cyclone Track Prediction Section */}
+        <TrackPredictionSection activeChannel={selectedChannel} />
+
+        {/* 7. Recent Historical Predictions Log */}
         <section id="history-section">
           <HistorySection
             history={history}
@@ -223,9 +227,8 @@ export const Dashboard: React.FC = () => {
 
       </main>
 
-      {/* 7. Advisory Disclaimer Footer */}
+      {/* 8. Advisory Disclaimer Footer */}
       <AdvisoryNote activeChannel={selectedChannel} />
     </div>
   );
 };
-

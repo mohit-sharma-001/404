@@ -39,6 +39,10 @@ export interface PredictionResult {
   wvImageName?: string;
   uploadedImageName?: string;
   modelNotice?: string;
+  isValidInput?: boolean;
+  warningMessage?: string;
+  centerLat?: number;
+  centerLon?: number;
   featureScores?: {
     eyeStructure: number;
     cloudBandSymmetry: number;
@@ -75,3 +79,35 @@ export interface UploadedImagesState {
 
 export type AnalysisStatus = 'idle' | 'analyzing' | 'success' | 'error';
 
+export interface TrackPredictionRequestParams {
+  current_lat: number;
+  current_lon: number;
+  storm_speed_kts?: number;
+  storm_dir_deg?: number;
+  past_lat_6h?: number;
+  past_lon_6h?: number;
+  past_lat_12h?: number;
+  past_lon_12h?: number;
+  past_lat_24h?: number;
+  past_lon_24h?: number;
+  dist2land_km?: number;
+  month?: number;
+}
+
+export interface TrackPointResult {
+  latitude: number;
+  longitude: number;
+  lat?: number;
+  lon?: number;
+  distance_km?: number;
+}
+
+export interface TrackPredictionResponseResult {
+  current_location: TrackPointResult;
+  forecast_24h: TrackPointResult;
+  forecast_48h: TrackPointResult;
+  movement_direction: string;
+  heading_degrees: number;
+  estimated_speed_kmh: number;
+  model_metrics?: Record<string, any>;
+}
