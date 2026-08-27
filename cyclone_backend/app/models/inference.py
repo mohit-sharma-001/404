@@ -227,4 +227,4 @@ class CycloneModel:
             "trend_confidence": 0.5,
             "sources_used": sources_used,
         }
-        
+
