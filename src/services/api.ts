@@ -143,6 +143,7 @@ class CycloneApiServiceImpl implements CycloneApiService {
           wvImageName: channel === 'WV' ? image.name : undefined,
           modelNotice: data.warning_message || undefined,
           isValidInput: data.is_valid_input,
+          hasCyclone: data.has_cyclone,
           warningMessage: data.warning_message,
           centerLat: data.center_lat,
           centerLon: data.center_lon,

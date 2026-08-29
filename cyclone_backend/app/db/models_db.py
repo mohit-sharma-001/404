@@ -13,9 +13,9 @@ class PredictionHistory(Base):
     has_cyclone = Column(Boolean, nullable=False, default=True)
     center_lat = Column(Float, nullable=True)
     center_lon = Column(Float, nullable=True)
-    intensity_category = Column(String, nullable=False)
+    intensity_category = Column(String, nullable=True)
     secondary_category = Column(String, nullable=True)
-    estimated_wind_speed_kmh = Column(Float, nullable=False)
+    estimated_wind_speed_kmh = Column(Float, nullable=True)
     confidence = Column(Float, nullable=False)
     secondary_confidence = Column(Float, nullable=True)
 

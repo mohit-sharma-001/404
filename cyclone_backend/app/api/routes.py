@@ -173,39 +173,51 @@ async def predict_cyclone(
             detail=f"Corrupted or invalid image data. Processing failed: {str(e)}",
         )
 
-    # 5. Additional warning if model confidence is below 0.35
-    confidence = pred_dict.get("confidence", 1.0)
-    if confidence < 0.35:
+    # 5. Model prediction overrides for "Not a Cyclone" or invalid inputs
+    has_cyclone = pred_dict.get("has_cyclone", True)
+
+    if not has_cyclone or pred_dict.get("intensity_category") == "Not a Cyclone":
         is_valid_input = False
-        low_conf_warn = "Low model confidence — this may not be a valid cyclone satellite image"
-        if warning_message:
-            warning_message = f"{warning_message} | {low_conf_warn}"
-        else:
-            warning_message = low_conf_warn
+        warning_message = "No cyclone detected in this image. This does not appear to be cyclone satellite imagery."
+        pred_dict["has_cyclone"] = False
+        pred_dict["intensity_category"] = None
+        pred_dict["estimated_wind_speed_kmh"] = None
+        pred_dict["secondary_category"] = None
+        pred_dict["secondary_confidence"] = None
+    else:
+        # Additional warning if model confidence is below 0.35
+        confidence = pred_dict.get("confidence", 1.0)
+        if confidence < 0.35:
+            is_valid_input = False
+            low_conf_warn = "Low model confidence — this may not be a valid cyclone satellite image"
+            if warning_message:
+                warning_message = f"{warning_message} | {low_conf_warn}"
+            else:
+                warning_message = low_conf_warn
 
-    # Rare category warning (informational note, does not affect is_valid_input)
-    intensity_category = pred_dict.get("intensity_category", "")
-    RARE_CATEGORIES = {"Super Cyclonic Storm", "Extremely Severe Cyclonic Storm"}
-    if intensity_category in RARE_CATEGORIES:
-        rare_warn = "This category had limited training examples — treat this prediction with extra caution."
-        if warning_message:
-            warning_message = f"{warning_message} | {rare_warn}"
-        else:
-            warning_message = rare_warn
+        # Rare category warning (informational note, does not affect is_valid_input)
+        intensity_category = pred_dict.get("intensity_category", "")
+        RARE_CATEGORIES = {"Super Cyclonic Storm", "Extremely Severe Cyclonic Storm"}
+        if intensity_category in RARE_CATEGORIES:
+            rare_warn = "This category had limited training examples — treat this prediction with extra caution."
+            if warning_message:
+                warning_message = f"{warning_message} | {rare_warn}"
+            else:
+                warning_message = rare_warn
 
-    # Single-source satellite channel precision warning (informational note, does not affect is_valid_input)
-    if len(sources_used) == 1:
-        single_src_warn = "Prediction based on a single satellite channel — providing additional channels (IR, WV, VIS, PMW) when available improves prediction precision."
-        if warning_message:
-            warning_message = f"{warning_message} | {single_src_warn}"
-        else:
-            warning_message = single_src_warn
+        # Single-source satellite channel precision warning (informational note, does not affect is_valid_input)
+        if len(sources_used) == 1:
+            single_src_warn = "Prediction based on a single satellite channel — providing additional channels (IR, WV, VIS, PMW) when available improves prediction precision."
+            if warning_message:
+                warning_message = f"{warning_message} | {single_src_warn}"
+            else:
+                warning_message = single_src_warn
 
-    # If input is invalid (e.g. plot/chart screenshot or non-satellite photo), mark has_cyclone as False & 0 km/h
+    # If input is invalid (e.g. plot/chart screenshot or non-satellite photo), ensure has_cyclone is False & None wind/intensity
     if not is_valid_input:
         pred_dict["has_cyclone"] = False
-        pred_dict["estimated_wind_speed_kmh"] = 0.0
-        pred_dict["intensity_category"] = "Depression"
+        pred_dict["estimated_wind_speed_kmh"] = None
+        pred_dict["intensity_category"] = None
         pred_dict["confidence"] = 0.0
 
     pred_dict["is_valid_input"] = is_valid_input

@@ -40,6 +40,7 @@ export interface PredictionResult {
   uploadedImageName?: string;
   modelNotice?: string;
   isValidInput?: boolean;
+  hasCyclone?: boolean;
   warningMessage?: string;
   centerLat?: number;
   centerLon?: number;

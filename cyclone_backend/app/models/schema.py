@@ -7,17 +7,9 @@ class PredictionResponse(BaseModel):
     has_cyclone: bool
     center_lat: float | None = None
     center_lon: float | None = None
-    intensity_category: Literal[
-        "Depression",
-        "Deep Depression",
-        "Cyclonic Storm",
-        "Severe Cyclonic Storm",
-        "Very Severe Cyclonic Storm",
-        "Extremely Severe Cyclonic Storm",
-        "Super Cyclonic Storm",
-    ]
+    intensity_category: str | None = None
     secondary_category: str | None = None
-    estimated_wind_speed_kmh: float
+    estimated_wind_speed_kmh: float | None = None
     confidence: float = Field(..., ge=0.0, le=1.0)
     secondary_confidence: float | None = Field(None, ge=0.0, le=1.0)
     trend: Literal["Intensifying", "Weakening", "Steady"]
