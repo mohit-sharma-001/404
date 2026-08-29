@@ -3,7 +3,7 @@ import { Sparkles, ArrowRight, Loader2 } from 'lucide-react';
 import { apiService, type SampleImageItem } from '../services/api';
 import type { SatelliteChannel, UploadedImageFile } from '../types/prediction';
 
-const rawBaseUrl = (import.meta.env.VITE_API_BASE_URL as string) || 'https://vayunetra-lttv.onrender.com';
+const rawBaseUrl = (import.meta.env.VITE_API_BASE_URL as string) || 'https://vayu-netra.onrender.com';
 const API_BASE_URL = rawBaseUrl.replace(/\/+$/, '');
 
 interface SampleLibraryProps {
