@@ -4,7 +4,6 @@ import { Header } from '../components/Header';
 import { HeroSection } from '../components/HeroSection';
 import { AdaptiveUploadCard, detectImageSpectrum } from '../components/AdaptiveUploadCard';
 import { PresetSelector } from '../components/PresetSelector';
-import { SampleLibrary } from '../components/SampleLibrary';
 import { PredictionCard } from '../components/PredictionCard';
 import { CategoryScale } from '../components/CategoryScale';
 import { TrackPredictionSection } from '../components/TrackPredictionSection';
@@ -69,16 +68,6 @@ export const Dashboard: React.FC = () => {
     setSelectedChannel(channel);
     setUploadedImage(imageFile);
     setWvUploadedImage(null);
-    setError(null);
-  };
-
-  const handleSelectSample = (
-    irImg: UploadedImageFile,
-    wvImg: UploadedImageFile | null
-  ) => {
-    setSelectedChannel('IR');
-    setUploadedImage(irImg);
-    setWvUploadedImage(wvImg);
     setError(null);
   };
 
@@ -190,9 +179,6 @@ export const Dashboard: React.FC = () => {
               Active Mode: <span className="font-bold" style={{ color: currentTheme.accentColor }}>{selectedChannel}</span>
             </div>
           </div>
-
-          {/* "Try a Sample" Library Section */}
-          <SampleLibrary activeChannel={selectedChannel} onSelectSample={handleSelectSample} />
 
           {/* Sample Preset Loader */}
           <PresetSelector onLoadPreset={handleLoadPreset} activeChannel={selectedChannel} />
