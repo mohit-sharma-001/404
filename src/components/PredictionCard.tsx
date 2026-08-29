@@ -79,6 +79,70 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
   }
 
   // 3. Success Result State
+  const hasCyclone = prediction.hasCyclone !== false;
+
+  if (!hasCyclone) {
+    return (
+      <div className="rounded-2xl glass-panel p-6 sm:p-7 space-y-6 relative overflow-hidden">
+        {/* Top Banner Header */}
+        <div className="flex items-center justify-between border-b border-slate-800/80 pb-4">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">AI Cyclone Analysis Result</h3>
+              <p className="text-xs text-slate-400 font-mono">
+                Model ID: {prediction.id}
+              </p>
+            </div>
+          </div>
+
+          {onReset && (
+            <button
+              type="button"
+              onClick={onReset}
+              className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 transition-colors text-xs font-medium flex items-center space-x-1.5 cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>New Analysis</span>
+            </button>
+          )}
+        </div>
+
+        {/* Prominent "No Cyclone Detected" Display Card */}
+        <div className="p-6 rounded-2xl bg-amber-950/40 border-2 border-amber-500/50 space-y-4 text-center sm:text-left flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-5 shadow-xl">
+          <div className="p-4 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
+            <ShieldAlert className="w-10 h-10" />
+          </div>
+          <div className="space-y-1.5 flex-1">
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              No Cyclone Detected
+            </span>
+            <h3 className="text-xl font-extrabold text-white">
+              No Active Cyclone Structure Detected
+            </h3>
+            <p className="text-sm text-amber-200 font-mono leading-relaxed">
+              {prediction.warningMessage || prediction.modelNotice || "No cyclone detected in this image. This does not appear to be cyclone satellite imagery."}
+            </p>
+          </div>
+        </div>
+
+        {/* Data Source & Timestamp details */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
+          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+            <span className="text-slate-400">Satellite Data Source:</span>
+            <span className="text-cyan-300 font-bold">{prediction.sourcesUsed}</span>
+          </div>
+          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
+            <span className="text-slate-400">Analysis Time:</span>
+            <span className="text-slate-200">{new Date(prediction.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} IST</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const categoryInfo = getCategoryInfo(prediction.category);
   const isHighWind = prediction.windSpeedKmh >= 100;
 
