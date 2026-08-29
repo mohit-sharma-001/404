@@ -129,6 +129,7 @@ def preprocess_single_channel(image_bytes: bytes) -> np.ndarray:
     image = image.convert("L")  # Convert image to grayscale (single channel)
     image = image.resize((224, 224))  # Resize to 224x224 pixels
     img_array = np.array(image, dtype=np.float32) / 255.0  # Normalize pixel values to 0-1
+    img_array = 1.0 - img_array  # Invert pixel values so bright cloud tops (high PNG values) map to low values matching training dataset
     return img_array
 
 
@@ -195,9 +196,9 @@ def preprocess_multisource(
             pmw_array = preprocess_single_channel(pmw_bytes)
             sources_used.append("PMW")
         except Exception:
-            pmw_array = base_array.copy()
+            pmw_array = np.zeros_like(base_array)
     else:
-        pmw_array = base_array.copy()
+        pmw_array = np.zeros_like(base_array)
 
     # Stack IR, WV, VIS, PMW along axis 0 -> shape: (4, 224, 224)
     stacked_array = np.stack([ir_array, wv_array, vis_array, pmw_array], axis=0)

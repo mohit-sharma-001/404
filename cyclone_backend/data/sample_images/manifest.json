@@ -4,6 +4,8 @@
     "display_name": "Depression \u2014 200405I",
     "ground_truth_category": "Depression",
     "ground_truth_wind_speed": 46.3,
+    "h5_row_index": 1941,
+    "h5_source_file": "data/raw/TCIR-CPAC_IO_SH.h5",
     "ir_filename": "sample_depression_ir.png",
     "wv_filename": "sample_depression_wv.png"
   },
@@ -12,6 +14,8 @@
     "display_name": "Deep Depression \u2014 200603I",
     "ground_truth_category": "Deep Depression",
     "ground_truth_wind_speed": 55.6,
+    "h5_row_index": 2372,
+    "h5_source_file": "data/raw/TCIR-CPAC_IO_SH.h5",
     "ir_filename": "sample_deep_depression_ir.png",
     "wv_filename": "sample_deep_depression_wv.png"
   },
@@ -20,6 +24,8 @@
     "display_name": "Cyclonic Storm \u2014 200405I",
     "ground_truth_category": "Cyclonic Storm",
     "ground_truth_wind_speed": 74.1,
+    "h5_row_index": 1927,
+    "h5_source_file": "data/raw/TCIR-CPAC_IO_SH.h5",
     "ir_filename": "sample_cyclonic_storm_ir.png",
     "wv_filename": "sample_cyclonic_storm_wv.png"
   },
@@ -28,6 +34,8 @@
     "display_name": "Severe Cyclonic Storm \u2014 200402I",
     "ground_truth_category": "Severe Cyclonic Storm",
     "ground_truth_wind_speed": 101.9,
+    "h5_row_index": 1747,
+    "h5_source_file": "data/raw/TCIR-CPAC_IO_SH.h5",
     "ir_filename": "sample_severe_cyclonic_storm_ir.png",
     "wv_filename": "sample_severe_cyclonic_storm_wv.png"
   },
@@ -36,6 +44,8 @@
     "display_name": "Very Severe Cyclonic Storm \u2014 201403I",
     "ground_truth_category": "Very Severe Cyclonic Storm",
     "ground_truth_wind_speed": 129.6,
+    "h5_row_index": 4120,
+    "h5_source_file": "data/raw/TCIR-CPAC_IO_SH.h5",
     "ir_filename": "sample_very_severe_cyclonic_storm_ir.png",
     "wv_filename": "sample_very_severe_cyclonic_storm_wv.png"
   },
@@ -44,6 +54,8 @@
     "display_name": "Extremely Severe Cyclonic Storm \u2014 201403I",
     "ground_truth_category": "Extremely Severe Cyclonic Storm",
     "ground_truth_wind_speed": 203.7,
+    "h5_row_index": 4136,
+    "h5_source_file": "data/raw/TCIR-CPAC_IO_SH.h5",
     "ir_filename": "sample_extremely_severe_cyclonic_storm_ir.png",
     "wv_filename": "sample_extremely_severe_cyclonic_storm_wv.png"
   },
@@ -52,6 +64,8 @@
     "display_name": "Super Cyclonic Storm \u2014 201004I",
     "ground_truth_category": "Super Cyclonic Storm",
     "ground_truth_wind_speed": 240.8,
+    "h5_row_index": 3268,
+    "h5_source_file": "data/raw/TCIR-CPAC_IO_SH.h5",
     "ir_filename": "sample_super_cyclonic_storm_ir.png",
     "wv_filename": "sample_super_cyclonic_storm_wv.png"
   }

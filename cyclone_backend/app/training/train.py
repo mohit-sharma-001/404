@@ -6,7 +6,7 @@ Transfer Learning Strategy:
 - Stage 1 (Pretraining): The model learns general cyclone visual patterns and spatial dynamics
   from a large global dataset (~33k images across Atlantic, East Pacific, and West Pacific storms).
 - Stage 2 (Fine-Tuning): The model specializes its predictions for Indian Ocean storms (~2.2k images)
-  and non-cyclone negative samples (3000 CIFAR-10 images, label=7) via fine-tuning with a reduced
+  and non-cyclone negative samples (500 CIFAR-10 images, label=7) via fine-tuning with a reduced
   learning rate (lr=0.00005) across 8 classification output categories.
 """
 
@@ -80,6 +80,15 @@ def compute_class_weights(
 
     weights = 1.0 / cat_counts
     weights = weights / weights.sum() * float(num_classes)
+
+    # Cap class index 7 ("Not a Cyclone") weight at max 1.5x the average weight of the other 7 classes
+    if n_negative_samples > 0:
+        avg_other_weights = float(np.mean(weights[:7]))
+        max_class7_weight = 1.5 * avg_other_weights
+        if weights[7] > max_class7_weight:
+            weights[7] = max_class7_weight
+        weights = weights / weights.sum() * float(num_classes)
+
     return torch.from_numpy(weights).float()
 
 
@@ -230,21 +239,21 @@ def run_stage2_finetuning(
 
     # 1. Create Datasets and DataLoaders
     s2_tcir_train_ds = TCIRDataset(file_indices=stage2_train_dict, info_df=combined_info_df, augment=True)
-    neg_train_ds = get_negative_samples(n_samples=3000, seed=42, train=True)
+    neg_train_ds = get_negative_samples(n_samples=500, seed=42, train=True)
     s2_train_ds = ConcatDataset([s2_tcir_train_ds, neg_train_ds])
 
     s2_tcir_val_ds = TCIRDataset(file_indices=stage2_val_dict, info_df=combined_info_df, augment=False)
-    neg_val_ds = get_negative_samples(n_samples=300, seed=123, train=True)
+    neg_val_ds = get_negative_samples(n_samples=50, seed=123, train=True)
     s2_val_ds = ConcatDataset([s2_tcir_val_ds, neg_val_ds])
 
     train_loader = DataLoader(s2_train_ds, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(s2_val_ds, batch_size=batch_size, shuffle=False)
 
-    print(f"Stage 2 Combined Train Dataset: {len(s2_train_ds)} samples ({len(s2_tcir_train_ds)} TCIR + 3000 Negatives)")
-    print(f"Stage 2 Combined Val Dataset:   {len(s2_val_ds)} samples ({len(s2_tcir_val_ds)} TCIR + 300 Negatives)")
+    print(f"Stage 2 Combined Train Dataset: {len(s2_train_ds)} samples ({len(s2_tcir_train_ds)} TCIR + 500 Negatives)")
+    print(f"Stage 2 Combined Val Dataset:   {len(s2_val_ds)} samples ({len(s2_tcir_val_ds)} TCIR + 50 Negatives)")
 
     # 2. Compute Stage 2 Specific Class Weights (including 8th class)
-    class_weights = compute_class_weights(stage2_train_dict, combined_info_df, n_negative_samples=3000).to(device)
+    class_weights = compute_class_weights(stage2_train_dict, combined_info_df, n_negative_samples=500).to(device)
     criterion_classification = nn.CrossEntropyLoss(weight=class_weights)
     criterion_regression = nn.MSELoss()
 
@@ -447,10 +456,33 @@ def run_final_evaluation(
         else 0.0
     )
 
+    # 3. False Negatives (Genuine TCIR cyclones predicted as Not a Cyclone)
+    false_negatives = sum(1 for t, p in zip(all_targets, all_preds) if t < 7 and p == 7)
+    total_genuine_cyclones = sum(1 for t in all_targets if t < 7)
+
+    # 4. Separate Category Accuracies
+    dep_indices = [i for i, t in enumerate(all_targets) if t == 0]
+    dep_correct = sum(1 for i in dep_indices if all_preds[i] == 0)
+    dep_accuracy = (dep_correct / len(dep_indices) * 100.0) if dep_indices else 0.0
+
+    ddep_indices = [i for i, t in enumerate(all_targets) if t == 1]
+    ddep_correct = sum(1 for i in ddep_indices if all_preds[i] == 1)
+    ddep_accuracy = (ddep_correct / len(ddep_indices) * 100.0) if ddep_indices else 0.0
+
+    other_indices = [i for i, t in enumerate(all_targets) if 2 <= t <= 6]
+    other_correct = sum(1 for i in other_indices if all_preds[i] == all_targets[i])
+    other_accuracy = (other_correct / len(other_indices) * 100.0) if other_indices else 0.0
+
     print(f"Final Test Loss:                     {final_test_loss:.4f}")
     print(f"Total Test Samples:                  {len(test_ds)} ({len(tcir_test_ds)} TCIR + {len(neg_test_ds)} CIFAR Negatives)")
     print(f"Cyclone vs Not-Cyclone Binary Acc:   {binary_accuracy:.2f}% ({binary_correct}/{len(all_targets)})")
+    print(f"False Negatives (Genuine -> Not Cyclone): {false_negatives}/{total_genuine_cyclones}")
     print(f"Intensity Classification Acc:        {intensity_accuracy:.2f}% ({intensity_correct}/{len(correctly_identified_cyclones)} correctly identified cyclones)\n")
+
+    print("--- Detailed Category-Specific Accuracy Breakdown ---")
+    print(f"  Depression (Class 0) Accuracy:     {dep_accuracy:.2f}% ({dep_correct}/{len(dep_indices)})")
+    print(f"  Deep Depression (Class 1) Accuracy:{ddep_accuracy:.2f}% ({ddep_correct}/{len(ddep_indices)})")
+    print(f"  All Other Categories (2-6) Acc:    {other_accuracy:.2f}% ({other_correct}/{len(other_indices)})\n")
 
     # 8x8 Confusion Matrix Calculation & Display
     cm = confusion_matrix(all_targets, all_preds, labels=list(range(8)))
@@ -485,7 +517,7 @@ def train_pipeline():
     # 2. Stage 1 Pretraining (20 Epochs on Global Data)
     run_stage1_pretraining(stage1_train, combined_info_df, epochs=20, batch_size=16, lr=0.0002)
 
-    # 3. Stage 2 Fine-Tuning (30 Epochs on Indian Ocean Data + 3000 Negative Samples)
+    # 3. Stage 2 Fine-Tuning (30 Epochs on Indian Ocean Data + 500 Negative Samples)
     run_stage2_finetuning(stage2_train, stage2_val, combined_info_df, epochs=30, batch_size=16, lr=0.00005)
 
     # 4. Final Evaluation on Mixed Held-Out Test Set

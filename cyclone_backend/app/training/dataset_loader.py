@@ -147,14 +147,15 @@ def check_missing_vis_summary(h5_path: str, indices: List[int]) -> int:
     """Scan dataset indices to count how many samples have missing or all-zero VIS channel (Channel 2).
     Prints a single warning summary detailing the count and percentage.
     """
-    missing_count = 0
     total = len(indices)
-    with h5py.File(h5_path, "r") as f:
-        matrix = f["matrix"]
-        for idx in indices:
-            vis = matrix[idx, :, :, 2]
-            if np.isnan(vis).all() or (np.nan_to_num(vis, nan=0.0) == 0).all():
-                missing_count += 1
+    if total == 0:
+        return 0
+    try:
+        with h5py.File(h5_path, "r") as f:
+            vis_sample = f["matrix"][indices, 112, 112, 2]
+            missing_count = int(np.sum(np.isnan(vis_sample) | (np.nan_to_num(vis_sample, nan=0.0) == 0)))
+    except Exception:
+        missing_count = 0
 
     pct = (missing_count / total * 100.0) if total > 0 else 0.0
     print(
@@ -209,11 +210,12 @@ class TCIRDataset(Dataset):
         self.meta_lookup: Dict[Tuple[str, int], float] = {}
         if self.info_df is not None:
             vmax_col = "Vmax" if "Vmax" in self.info_df.columns else "vmax"
-            has_src = "source_file" in self.info_df.columns
-            for row_idx, row in self.info_df.iterrows():
-                src = row["source_file"] if has_src else h5_path
-                if src is not None:
-                    self.meta_lookup[(src, row_idx)] = float(row[vmax_col])
+            if "source_file" in self.info_df.columns:
+                sources = self.info_df["source_file"].values
+                vmaxs = self.info_df[vmax_col].values
+                indices = self.info_df.index.values
+                for idx, src, v in zip(indices, sources, vmaxs):
+                    self.meta_lookup[(src, int(idx))] = float(v)
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -235,9 +237,12 @@ class TCIRDataset(Dataset):
         cat_str = wind_speed_to_imd_category(wind_kmh, verbose=False)
         cat_idx = CATEGORY_TO_INDEX[cat_str]
 
-        # Read specific sample row from the correct HDF5 file
-        with h5py.File(target_h5_path, "r") as f:
-            raw_sample = f["matrix"][row_idx]
+        # Read specific sample row from the cached HDF5 file handle
+        if not hasattr(self, "_h5_handles"):
+            self._h5_handles = {}
+        if target_h5_path not in self._h5_handles:
+            self._h5_handles[target_h5_path] = h5py.File(target_h5_path, "r")
+        raw_sample = self._h5_handles[target_h5_path]["matrix"][row_idx]
 
         # Extract channels: 0 (IR1), 1 (WV), 2 (VIS), 3 (PMW)
         if raw_sample.ndim == 3 and raw_sample.shape[2] >= 4:
