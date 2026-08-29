@@ -154,7 +154,11 @@ class CycloneApiServiceImpl implements CycloneApiService {
           },
         };
       } catch (err: any) {
-        console.warn(`Backend prediction call failed (${err.message}). Using calibrated fallback response.`);
+        // If it's a real HTTP error response from backend (e.g. 400 Bad Request), rethrow so UI displays the actual error
+        if (err.message && !err.message.includes('Failed to fetch') && !err.message.includes('NetworkError') && !err.message.includes('Load failed')) {
+          throw err;
+        }
+        console.warn(`Backend prediction network call failed (${err.message}). Using calibrated fallback response.`);
       }
     }
 
