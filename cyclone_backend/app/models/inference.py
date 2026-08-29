@@ -195,7 +195,7 @@ class CycloneModel:
             # Physical Cloud Structure Calibration:
             raw_speed = max(0.0, float(wind_speed_raw.item()))
 
-            if top1_idx == 7 or (convective_pixels_ratio < 0.08 and central_convection_ratio < 0.10):
+            if top1_idx == 7:
                 # Case A: Clear ocean / normal sea map or classified as Not a Cyclone
                 has_cyclone = False
                 wind_speed_kmh = round(min(32.0, max(12.0, raw_speed * 0.22)), 2)

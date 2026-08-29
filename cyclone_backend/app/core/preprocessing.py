@@ -92,10 +92,22 @@ def check_valid_satellite_image(image_bytes: bytes, source_type: str = "IR") -> 
         dy = np.abs(np.diff(gray, axis=0))
         mean_edge_intensity = float(np.mean(dx) + np.mean(dy))
 
-        if mean_edge_intensity > 28.0:
+        # Sharp edge density (detects crisp text fonts, UI buttons, line art strokes)
+        sharp_edge_density = float(np.mean(dx > 45.0) + np.mean(dy > 45.0))
+        if sharp_edge_density > 0.045 or mean_edge_intensity > 25.0:
             return (
                 False,
-                "Non-satellite object or graphic detected (unnatural sharp object outlines / map borders / non-cloud texture).",
+                "Non-satellite object or graphic detected (unnatural sharp object outlines / text / line art / UI graphics).",
+            )
+
+        # 5b. Line Art / Black-and-White Sketch Filter
+        # Detects sketches, line drawings, and high-contrast graphics with solid black background
+        black_ratio = float(np.mean(gray < 20.0))
+        white_stroke_ratio = float(np.mean(gray > 230.0))
+        if (black_ratio + white_stroke_ratio > 0.65) and black_ratio > 0.35:
+            return (
+                False,
+                "Non-satellite graphic detected (black-and-white sketch / line drawing / high-contrast illustration).",
             )
 
         # 6. Satellite Cloud Lightness & Background Check
