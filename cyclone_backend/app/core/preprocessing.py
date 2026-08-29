@@ -28,8 +28,18 @@ def check_valid_satellite_image(image_bytes: bytes, source_type: str = "IR") -> 
     and strictly rejects all non-satellite images (humans, animals, objects, trees, furniture, sun, maps, etc.).
     """
     try:
-        image = Image.open(io.BytesIO(image_bytes))
+        try:
+            image = Image.open(io.BytesIO(image_bytes))
+            image.load()
+        except Exception as e:
+            return (False, f"Corrupted or invalid image file. Unable to decode image: {str(e)}")
+
         width, height = image.size
+
+        # Maximum pixel dimension check (resize down if > 4000px to prevent excessive memory usage)
+        if width > 4000 or height > 4000:
+            image.thumbnail((4000, 4000), Image.Resampling.LANCZOS)
+            width, height = image.size
 
         # 1. Dimension check (minimum 50x50)
         if width < 50 or height < 50:
@@ -105,7 +115,17 @@ def preprocess_single_channel(image_bytes: bytes) -> np.ndarray:
     """Helper function to load an image from bytes, convert to grayscale (1 channel),
     resize to 224x224, and normalize pixel values to float range [0.0, 1.0].
     """
-    image = Image.open(io.BytesIO(image_bytes))
+    try:
+        image = Image.open(io.BytesIO(image_bytes))
+        image.load()
+    except Exception as e:
+        raise ValueError(f"Corrupted or invalid image file. Unable to decode image: {str(e)}")
+
+    width, height = image.size
+    # Maximum pixel dimension check (resize down if > 4000px to prevent excessive memory usage)
+    if width > 4000 or height > 4000:
+        image.thumbnail((4000, 4000), Image.Resampling.LANCZOS)
+
     image = image.convert("L")  # Convert image to grayscale (single channel)
     image = image.resize((224, 224))  # Resize to 224x224 pixels
     img_array = np.array(image, dtype=np.float32) / 255.0  # Normalize pixel values to 0-1

@@ -120,6 +120,15 @@ async def predict_cyclone(
             detail="At least one satellite image (IR, WV, VIS, or PMW) is required",
         )
 
+    # 2b. File size check (max 10MB per uploaded image file)
+    MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
+    for f_bytes in [ir_bytes, wv_bytes, vis_bytes, pmw_bytes]:
+        if f_bytes and len(f_bytes) > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Image file too large (max 10MB). Please upload a smaller image.",
+            )
+
     # 3. Check satellite image characteristics for EACH provided file against its source_type
     base_filename = (
         (ir_file.filename if has_ir else None)
