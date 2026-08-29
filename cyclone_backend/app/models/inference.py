@@ -24,7 +24,7 @@ import torch.nn.functional as F
 
 from app.core.config import settings
 
-# 7 official cyclone intensity categories
+# 8 intensity categories (7 official IMD categories + 1 non-cyclone negative category)
 INTENSITY_CATEGORIES = [
     "Depression",
     "Deep Depression",
@@ -33,6 +33,7 @@ INTENSITY_CATEGORIES = [
     "Very Severe Cyclonic Storm",
     "Extremely Severe Cyclonic Storm",
     "Super Cyclonic Storm",
+    "Not a Cyclone",
 ]
 
 
@@ -46,7 +47,7 @@ class CycloneCNN(nn.Module):
     - 4 Convolutional Layers + BatchNorm + ReLU + Max Pooling
     - Adaptive Average Pooling (7x7)
     - 2 Fully Connected (Linear) Layers
-    - Classification Head (7 output logits)
+    - Classification Head (8 output logits)
     - Regression Head (1 output value for wind speed in km/h)
 
     Batch Normalization Note:
@@ -81,8 +82,9 @@ class CycloneCNN(nn.Module):
         self.fc1 = nn.Linear(256 * 7 * 7, 256)
         self.fc2 = nn.Linear(256, 128)
 
-        # Output Head 1: Classification Head (7 intensity categories)
-        self.classification_head = nn.Linear(128, 7)
+        # Output Head 1: Classification Head (8 output categories)
+        self.classification_head = nn.Linear(128, 8)
+
 
         # Output Head 2: Regression Head (1 numerical value for wind speed in km/h)
         self.regression_head = nn.Linear(128, 1)
@@ -120,15 +122,24 @@ class CycloneModel:
         if os.path.exists(self.checkpoint_path):
             try:
                 checkpoint = torch.load(self.checkpoint_path, map_location="cpu")
-                if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-                    self.model.load_state_dict(checkpoint["model_state_dict"])
-                elif isinstance(checkpoint, dict):
-                    self.model.load_state_dict(checkpoint)
+                state_dict = (
+                    checkpoint["model_state_dict"]
+                    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint
+                    else checkpoint
+                )
+                if "classification_head.weight" in state_dict and state_dict["classification_head.weight"].shape[0] != 8:
+                    print("Note: Checkpoint classification_head size mismatch detected (7 vs 8 classes). Loading weights with strict=False.")
+                    state_dict.pop("classification_head.weight", None)
+                    state_dict.pop("classification_head.bias", None)
+                    self.model.load_state_dict(state_dict, strict=False)
+                else:
+                    self.model.load_state_dict(state_dict)
                 print(f"Loaded model weights from '{self.checkpoint_path}'")
             except Exception as e:
                 print(
                     f"Warning: Failed to load checkpoint '{self.checkpoint_path}' ({e}). Using random weights."
                 )
+
         else:
             print(
                 f"Checkpoint file '{self.checkpoint_path}' not found. Initializing with random weights for development."

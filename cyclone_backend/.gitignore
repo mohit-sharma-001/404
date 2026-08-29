@@ -22,6 +22,8 @@ data/*.pkl
 !data/track_model.pkl
 data/*.db
 data/test_samples/
+data/negatives/
+*.tar.gz
 cyclone.db
 cyclone_app_colab.zip
 !ibtracs.NI.list.v04r01.csv

@@ -6,10 +6,8 @@ Transfer Learning Strategy:
 - Stage 1 (Pretraining): The model learns general cyclone visual patterns and spatial dynamics
   from a large global dataset (~33k images across Atlantic, East Pacific, and West Pacific storms).
 - Stage 2 (Fine-Tuning): The model specializes its predictions for Indian Ocean storms (~2.2k images)
-  via fine-tuning with a significantly reduced learning rate (lr=0.00005) so the specialized training
-  builds upon the rich global visual representations without destroying them.
-
-This two-stage approach provides better generalization, faster convergence, and higher final accuracy.
+  and non-cyclone negative samples (3000 CIFAR-10 images, label=7) via fine-tuning with a reduced
+  learning rate (lr=0.00005) across 8 classification output categories.
 """
 
 import os
@@ -26,18 +24,18 @@ import numpy as np
 import torch
 import torch.nn as nn
 from sklearn.metrics import confusion_matrix
-from torch.utils.data import DataLoader
+from torch.utils.data import ConcatDataset, DataLoader
 
 from app.core.config import settings
-from app.models.inference import CycloneCNN
+from app.models.inference import CycloneCNN, INTENSITY_CATEGORIES
 from app.training.dataset_loader import (
     CATEGORY_TO_INDEX,
-    IMD_CATEGORIES,
     TCIRDataset,
     combine_and_split,
     knots_to_kmh,
     wind_speed_to_imd_category,
 )
+from app.training.negative_dataset import get_negative_samples
 
 PRETRAINED_CHECKPOINT_PATH = "data/model_checkpoint_pretrained.pth"
 
@@ -47,18 +45,19 @@ print(f"Using device: {device}")
 
 
 def compute_class_weights(
-    file_indices: Dict[str, List[int]], info_df
+    file_indices: Dict[str, List[int]], info_df, n_negative_samples: int = 0
 ) -> torch.Tensor:
-    """Compute balanced class weights for CrossEntropyLoss based on category distribution."""
+    """Compute balanced class weights for CrossEntropyLoss across all 8 categories."""
+    num_classes = len(INTENSITY_CATEGORIES)
+    cat_counts = np.zeros(num_classes, dtype=np.float32)
+
     vmax_col = "Vmax" if "Vmax" in info_df.columns else "vmax"
     has_src = "source_file" in info_df.columns
-    cat_counts = np.zeros(len(IMD_CATEGORIES), dtype=np.float32)
 
     for h5_path, indices in file_indices.items():
         for idx in indices:
             if idx in info_df.index:
                 row = info_df.loc[idx]
-                # Match row if multi-file dataframe
                 if isinstance(row, torch.Tensor):
                     vmax_knots = float(row[vmax_col])
                 elif hasattr(row, "ndim") and row.ndim > 1:
@@ -72,8 +71,15 @@ def compute_class_weights(
                 cat_idx = CATEGORY_TO_INDEX[cat_str]
                 cat_counts[cat_idx] += 1.0
 
-    weights = 1.0 / (cat_counts + 1e-5)
-    weights = weights / weights.sum() * float(len(IMD_CATEGORIES))
+    if n_negative_samples > 0:
+        cat_counts[7] = float(n_negative_samples)
+
+    positive_counts = cat_counts[cat_counts > 0]
+    default_count = positive_counts.mean() if len(positive_counts) > 0 else 1.0
+    cat_counts[cat_counts == 0] = default_count
+
+    weights = 1.0 / cat_counts
+    weights = weights / weights.sum() * float(num_classes)
     return torch.from_numpy(weights).float()
 
 
@@ -114,7 +120,7 @@ def run_stage1_pretraining(
     val_loader = DataLoader(s1_val_ds, batch_size=batch_size, shuffle=False)
 
     # 3. Compute Class Weights & Loss (moved to device)
-    class_weights = compute_class_weights(s1_train_split, combined_info_df).to(device)
+    class_weights = compute_class_weights(s1_train_split, combined_info_df, n_negative_samples=0).to(device)
     criterion_classification = nn.CrossEntropyLoss(weight=class_weights)
     criterion_regression = nn.MSELoss()
 
@@ -141,7 +147,16 @@ def run_stage1_pretraining(
             class_logits, speed_preds = model(images)
 
             loss_class = criterion_classification(class_logits, labels)
-            loss_reg = criterion_regression(speed_preds, wind_speed.unsqueeze(1).float())
+
+            # Mask out label=7 samples from regression loss
+            cyclone_mask = (labels != 7)
+            if cyclone_mask.any():
+                loss_reg = criterion_regression(
+                    speed_preds[cyclone_mask], wind_speed[cyclone_mask].unsqueeze(1).float()
+                )
+            else:
+                loss_reg = torch.tensor(0.0, device=device)
+
             loss = loss_class + 0.001 * loss_reg
 
             loss.backward()
@@ -165,7 +180,15 @@ def run_stage1_pretraining(
 
                 class_logits, speed_preds = model(images)
                 loss_class = criterion_classification(class_logits, labels)
-                loss_reg = criterion_regression(speed_preds, wind_speed.unsqueeze(1).float())
+
+                cyclone_mask = (labels != 7)
+                if cyclone_mask.any():
+                    loss_reg = criterion_regression(
+                        speed_preds[cyclone_mask], wind_speed[cyclone_mask].unsqueeze(1).float()
+                    )
+                else:
+                    loss_reg = torch.tensor(0.0, device=device)
+
                 loss = loss_class + 0.001 * loss_reg
 
                 val_loss += loss.item() * images.size(0)
@@ -196,24 +219,32 @@ def run_stage2_finetuning(
     stage2_train_dict: Dict[str, List[int]],
     stage2_val_dict: Dict[str, List[int]],
     combined_info_df,
-    epochs: int = 25,
+    epochs: int = 30,
     batch_size: int = 16,
     lr: float = 0.00005,
 ):
-    """STAGE 2: Fine-tuning on Indian Ocean dataset (~2.2k images)."""
+    """STAGE 2: Fine-tuning on Indian Ocean dataset combined with negative non-cyclone samples."""
     print(f"==================================================")
     print(f"   STAGE 2: INDIAN OCEAN DATASET FINE-TUNING     ")
     print(f"==================================================")
 
-    # 1. Datasets and DataLoaders
-    s2_train_ds = TCIRDataset(file_indices=stage2_train_dict, info_df=combined_info_df, augment=True)
-    s2_val_ds = TCIRDataset(file_indices=stage2_val_dict, info_df=combined_info_df, augment=False)
+    # 1. Create Datasets and DataLoaders
+    s2_tcir_train_ds = TCIRDataset(file_indices=stage2_train_dict, info_df=combined_info_df, augment=True)
+    neg_train_ds = get_negative_samples(n_samples=3000, seed=42, train=True)
+    s2_train_ds = ConcatDataset([s2_tcir_train_ds, neg_train_ds])
+
+    s2_tcir_val_ds = TCIRDataset(file_indices=stage2_val_dict, info_df=combined_info_df, augment=False)
+    neg_val_ds = get_negative_samples(n_samples=300, seed=123, train=True)
+    s2_val_ds = ConcatDataset([s2_tcir_val_ds, neg_val_ds])
 
     train_loader = DataLoader(s2_train_ds, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(s2_val_ds, batch_size=batch_size, shuffle=False)
 
-    # 2. Compute Stage 2 Specific Class Weights (Indian Ocean Distribution, moved to device)
-    class_weights = compute_class_weights(stage2_train_dict, combined_info_df).to(device)
+    print(f"Stage 2 Combined Train Dataset: {len(s2_train_ds)} samples ({len(s2_tcir_train_ds)} TCIR + 3000 Negatives)")
+    print(f"Stage 2 Combined Val Dataset:   {len(s2_val_ds)} samples ({len(s2_tcir_val_ds)} TCIR + 300 Negatives)")
+
+    # 2. Compute Stage 2 Specific Class Weights (including 8th class)
+    class_weights = compute_class_weights(stage2_train_dict, combined_info_df, n_negative_samples=3000).to(device)
     criterion_classification = nn.CrossEntropyLoss(weight=class_weights)
     criterion_regression = nn.MSELoss()
 
@@ -223,10 +254,31 @@ def run_stage2_finetuning(
 
     if os.path.exists(PRETRAINED_CHECKPOINT_PATH):
         checkpoint = torch.load(PRETRAINED_CHECKPOINT_PATH, map_location=device)
-        model.load_state_dict(checkpoint["model_state_dict"])
+        state_dict = (
+            checkpoint["model_state_dict"]
+            if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint
+            else checkpoint
+        )
+
+        # Check if classification_head shape in checkpoint matches current model (8 classes)
+        if "classification_head.weight" in state_dict and state_dict["classification_head.weight"].shape[0] != 8:
+            print("Note: Checkpoint classification_head size mismatch detected (7 vs 8 classes). Excluding classification_head weights for fresh 8-class initialization.")
+            state_dict.pop("classification_head.weight", None)
+            state_dict.pop("classification_head.bias", None)
+            model.load_state_dict(state_dict, strict=False)
+        else:
+            try:
+                model.load_state_dict(state_dict, strict=True)
+            except Exception as e:
+                print(f"Notice: Strict loading failed ({e}); falling back to strict=False excluding classification_head.")
+                state_dict.pop("classification_head.weight", None)
+                state_dict.pop("classification_head.bias", None)
+                model.load_state_dict(state_dict, strict=False)
+
         print(f"Loaded pretrained weights from '{PRETRAINED_CHECKPOINT_PATH}'")
     else:
         print("Warning: Pretrained checkpoint not found. Training from scratch.")
+
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
@@ -248,7 +300,16 @@ def run_stage2_finetuning(
             class_logits, speed_preds = model(images)
 
             loss_class = criterion_classification(class_logits, labels)
-            loss_reg = criterion_regression(speed_preds, wind_speed.unsqueeze(1).float())
+
+            # Mask out label=7 samples from regression loss
+            cyclone_mask = (labels != 7)
+            if cyclone_mask.any():
+                loss_reg = criterion_regression(
+                    speed_preds[cyclone_mask], wind_speed[cyclone_mask].unsqueeze(1).float()
+                )
+            else:
+                loss_reg = torch.tensor(0.0, device=device)
+
             loss = loss_class + 0.001 * loss_reg
 
             loss.backward()
@@ -272,7 +333,15 @@ def run_stage2_finetuning(
 
                 class_logits, speed_preds = model(images)
                 loss_class = criterion_classification(class_logits, labels)
-                loss_reg = criterion_regression(speed_preds, wind_speed.unsqueeze(1).float())
+
+                cyclone_mask = (labels != 7)
+                if cyclone_mask.any():
+                    loss_reg = criterion_regression(
+                        speed_preds[cyclone_mask], wind_speed[cyclone_mask].unsqueeze(1).float()
+                    )
+                else:
+                    loss_reg = torch.tensor(0.0, device=device)
+
                 loss = loss_class + 0.001 * loss_reg
 
                 val_loss += loss.item() * images.size(0)
@@ -302,9 +371,9 @@ def run_stage2_finetuning(
 def run_final_evaluation(
     stage2_test_dict: Dict[str, List[int]], combined_info_df, batch_size: int = 16
 ):
-    """FINAL EVALUATION: Evaluate best fine-tuned model on Indian Ocean held-out test set."""
+    """FINAL EVALUATION: Evaluate best fine-tuned model on Indian Ocean held-out test set + held-out CIFAR negatives."""
     print(f"==================================================")
-    print(f"   FINAL EVALUATION: INDIAN OCEAN HELD-OUT TEST   ")
+    print(f"   FINAL EVALUATION: INDIAN OCEAN & NEGATIVE TEST ")
     print(f"==================================================")
 
     final_checkpoint_path = settings.MODEL_CHECKPOINT_PATH
@@ -315,7 +384,14 @@ def run_final_evaluation(
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
 
-    test_ds = TCIRDataset(file_indices=stage2_test_dict, info_df=combined_info_df, augment=False)
+    # 1. Stage 2 TCIR test dataset
+    tcir_test_ds = TCIRDataset(file_indices=stage2_test_dict, info_df=combined_info_df, augment=False)
+
+    # 2. Held-out negative test set (500 separate CIFAR-10 images from CIFAR test split)
+    neg_test_ds = get_negative_samples(n_samples=500, seed=999, train=False)
+
+    # 3. Combine into mixed test dataset
+    test_ds = ConcatDataset([tcir_test_ds, neg_test_ds])
     test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False)
 
     criterion_classification = nn.CrossEntropyLoss()
@@ -334,7 +410,15 @@ def run_final_evaluation(
             class_logits, speed_preds = model(images)
 
             loss_class = criterion_classification(class_logits, labels)
-            loss_reg = criterion_regression(speed_preds, wind_speed.unsqueeze(1).float())
+
+            cyclone_mask = (labels != 7)
+            if cyclone_mask.any():
+                loss_reg = criterion_regression(
+                    speed_preds[cyclone_mask], wind_speed[cyclone_mask].unsqueeze(1).float()
+                )
+            else:
+                loss_reg = torch.tensor(0.0, device=device)
+
             loss = loss_class + 0.001 * loss_reg
 
             test_loss += loss.item() * images.size(0)
@@ -344,33 +428,50 @@ def run_final_evaluation(
             all_targets.extend(labels.cpu().numpy().tolist())
 
     final_test_loss = test_loss / len(test_ds)
-    correct_count = sum(1 for p, t in zip(all_preds, all_targets) if p == t)
-    final_test_acc = (correct_count / len(test_ds) * 100.0) if len(test_ds) > 0 else 0.0
 
-    print(f"Final Test Loss:     {final_test_loss:.4f}")
-    print(f"Final Test Accuracy: {final_test_acc:.2f}% ({correct_count}/{len(test_ds)})\n")
+    # Calculate metrics:
+    # 1. "Cyclone vs Not-Cyclone" binary accuracy
+    binary_targets = [1 if t < 7 else 0 for t in all_targets]
+    binary_preds = [1 if p < 7 else 0 for p in all_preds]
+    binary_correct = sum(1 for bp, bt in zip(binary_preds, binary_targets) if bp == bt)
+    binary_accuracy = (binary_correct / len(all_targets) * 100.0) if len(all_targets) > 0 else 0.0
 
-    # 7x7 Confusion Matrix Calculation & Display
-    cm = confusion_matrix(all_targets, all_preds, labels=list(range(7)))
+    # 2. "Intensity classification accuracy" (only on samples correctly identified as genuine cyclones)
+    correctly_identified_cyclones = [
+        (p, t) for p, t in zip(all_preds, all_targets) if t < 7 and p < 7
+    ]
+    intensity_correct = sum(1 for p, t in correctly_identified_cyclones if p == t)
+    intensity_accuracy = (
+        (intensity_correct / len(correctly_identified_cyclones) * 100.0)
+        if len(correctly_identified_cyclones) > 0
+        else 0.0
+    )
 
-    # Display Category Names & Index Legend
-    abbrevs = ["DEP", "D-DEP", "CS", "SCS", "VSCS", "ESCS", "SuperCS"]
+    print(f"Final Test Loss:                     {final_test_loss:.4f}")
+    print(f"Total Test Samples:                  {len(test_ds)} ({len(tcir_test_ds)} TCIR + {len(neg_test_ds)} CIFAR Negatives)")
+    print(f"Cyclone vs Not-Cyclone Binary Acc:   {binary_accuracy:.2f}% ({binary_correct}/{len(all_targets)})")
+    print(f"Intensity Classification Acc:        {intensity_accuracy:.2f}% ({intensity_correct}/{len(correctly_identified_cyclones)} correctly identified cyclones)\n")
 
-    print("--- 7x7 IMD Category Confusion Matrix ---")
+    # 8x8 Confusion Matrix Calculation & Display
+    cm = confusion_matrix(all_targets, all_preds, labels=list(range(8)))
+
+    abbrevs = ["DEP", "D-DEP", "CS", "SCS", "VSCS", "ESCS", "SuperCS", "NotCyclone"]
+
+    print("--- 8x8 Category Confusion Matrix ---")
     print("Legend:")
-    for idx, (cat, abbr) in enumerate(zip(IMD_CATEGORIES, abbrevs)):
-        print(f"  [{idx}] {abbr:<8} = {cat}")
+    for idx, (cat, abbr) in enumerate(zip(INTENSITY_CATEGORIES, abbrevs)):
+        print(f"  [{idx}] {abbr:<10} = {cat}")
 
     print("\nConfusion Matrix (Rows: Ground Truth, Columns: Model Prediction):")
     title_label = "True \\ Pred"
-    header_str = f"{title_label:<12} | " + " | ".join([f"{abbr:>7}" for abbr in abbrevs])
+    header_str = f"{title_label:<12} | " + " | ".join([f"{abbr:>10}" for abbr in abbrevs])
 
     print("-" * len(header_str))
     print(header_str)
     print("-" * len(header_str))
 
     for row_idx, row in enumerate(cm):
-        row_str = f"{abbrevs[row_idx]:<12} | " + " | ".join([f"{val:>7d}" for val in row])
+        row_str = f"{abbrevs[row_idx]:<12} | " + " | ".join([f"{val:>10d}" for val in row])
         print(row_str)
 
     print("-" * len(header_str))
@@ -384,10 +485,10 @@ def train_pipeline():
     # 2. Stage 1 Pretraining (20 Epochs on Global Data)
     run_stage1_pretraining(stage1_train, combined_info_df, epochs=20, batch_size=16, lr=0.0002)
 
-    # 3. Stage 2 Fine-Tuning (25 Epochs on Indian Ocean Data)
-    run_stage2_finetuning(stage2_train, stage2_val, combined_info_df, epochs=25, batch_size=16, lr=0.00005)
+    # 3. Stage 2 Fine-Tuning (30 Epochs on Indian Ocean Data + 3000 Negative Samples)
+    run_stage2_finetuning(stage2_train, stage2_val, combined_info_df, epochs=30, batch_size=16, lr=0.00005)
 
-    # 4. Final Evaluation on Held-Out Test Set
+    # 4. Final Evaluation on Mixed Held-Out Test Set
     run_final_evaluation(stage2_test, combined_info_df, batch_size=16)
 
 

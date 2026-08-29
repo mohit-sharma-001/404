@@ -12,6 +12,15 @@ import { getIMDCategoryFromWindSpeed } from '../data/cycloneCategories';
 const rawBaseUrl = (import.meta.env.VITE_API_BASE_URL as string) || 'https://vayunetra-lttv.onrender.com';
 const API_BASE_URL = rawBaseUrl.replace(/\/+$/, '');
 
+export interface SampleImageItem {
+  id: string;
+  display_name: string;
+  ground_truth_category: string;
+  ground_truth_wind_speed: number;
+  ir_filename: string;
+  wv_filename: string;
+}
+
 export interface AnalyzeCycloneParams {
   channel: SatelliteChannel;
   image: UploadedImageFile;
@@ -24,6 +33,8 @@ export interface CycloneApiService {
   getHistory(): Promise<HistoryItem[]>;
   predictTrack(params: TrackPredictionRequestParams): Promise<TrackPredictionResponseResult>;
   checkHealth(): Promise<boolean>;
+  getSampleImages(): Promise<SampleImageItem[]>;
+  getSampleImageFile(sampleId: string, channel: 'ir' | 'wv'): Promise<File>;
 }
 
 class CycloneApiServiceImpl implements CycloneApiService {
@@ -44,6 +55,33 @@ class CycloneApiServiceImpl implements CycloneApiService {
   }
 
   /**
+   * Fetches sample images manifest from GET /api/v1/sample-images.
+   */
+  async getSampleImages(): Promise<SampleImageItem[]> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/sample-images`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn("Failed to fetch sample images manifest:", e);
+    }
+    return [];
+  }
+
+  /**
+   * Serves actual sample image file from GET /api/v1/sample-images/{sample_id}/{channel}.
+   */
+  async getSampleImageFile(sampleId: string, channel: 'ir' | 'wv'): Promise<File> {
+    const res = await fetch(`${API_BASE_URL}/api/v1/sample-images/${sampleId}/${channel}`);
+    if (!res.ok) {
+      throw new Error(`Failed to fetch ${channel} sample image file for ${sampleId}`);
+    }
+    const blob = await res.blob();
+    return new File([blob], `sample_${sampleId}_${channel}.png`, { type: 'image/png' });
+  }
+
+  /**
    * Real multi-spectral satellite prediction endpoint call.
    */
   async analyzeCyclone(params: AnalyzeCycloneParams): Promise<PredictionResult> {
@@ -55,17 +93,25 @@ class CycloneApiServiceImpl implements CycloneApiService {
     }
 
     // Attempt real backend POST /api/v1/predict if file object is present
-    if (image.file) {
+    if (image.file || params.irImage?.file || params.wvImage?.file) {
       try {
         const formData = new FormData();
-        const fieldNameMap: Record<SatelliteChannel, string> = {
-          IR: 'ir_file',
-          WV: 'wv_file',
-          VIS: 'vis_file',
-          PMW: 'pmw_file',
-        };
-        const fileKey = fieldNameMap[channel] || 'ir_file';
-        formData.append(fileKey, image.file, image.name);
+        if (params.irImage?.file) {
+          formData.append('ir_file', params.irImage.file, params.irImage.name);
+        }
+        if (params.wvImage?.file) {
+          formData.append('wv_file', params.wvImage.file, params.wvImage.name);
+        }
+        if (!params.irImage?.file && !params.wvImage?.file && image.file) {
+          const fieldNameMap: Record<SatelliteChannel, string> = {
+            IR: 'ir_file',
+            WV: 'wv_file',
+            VIS: 'vis_file',
+            PMW: 'pmw_file',
+          };
+          const fileKey = fieldNameMap[channel] || 'ir_file';
+          formData.append(fileKey, image.file, image.name);
+        }
 
         const response = await fetch(`${API_BASE_URL}/api/v1/predict`, {
           method: 'POST',

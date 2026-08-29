@@ -1,4 +1,7 @@
+import json
+from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.preprocessing import (
@@ -21,6 +24,9 @@ router = APIRouter()
 # Instantiate Models ONCE at module level
 model = CycloneModel()
 track_model = TrackModel()
+
+SAMPLE_IMAGES_DIR = Path(__file__).resolve().parents[2] / "data" / "sample_images"
+MANIFEST_PATH = SAMPLE_IMAGES_DIR / "manifest.json"
 
 # Allowed file extensions for validation
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".h5", ".hdf5"}
@@ -187,6 +193,14 @@ async def predict_cyclone(
         else:
             warning_message = rare_warn
 
+    # Single-source satellite channel precision warning (informational note, does not affect is_valid_input)
+    if len(sources_used) == 1:
+        single_src_warn = "Prediction based on a single satellite channel — providing additional channels (IR, WV, VIS, PMW) when available improves prediction precision."
+        if warning_message:
+            warning_message = f"{warning_message} | {single_src_warn}"
+        else:
+            warning_message = single_src_warn
+
     # If input is invalid (e.g. plot/chart screenshot or non-satellite photo), mark has_cyclone as False & 0 km/h
     if not is_valid_input:
         pred_dict["has_cyclone"] = False
@@ -306,4 +320,75 @@ def predict_cyclone_track(req: TrackPredictionRequest):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Track prediction failed: {str(e)}",
         )
+
+
+@router.get(
+    "/sample-images",
+    status_code=status.HTTP_200_OK,
+)
+def get_sample_images():
+    """GET /api/v1/sample-images
+
+    Returns the sample satellite images manifest JSON.
+    """
+    if not MANIFEST_PATH.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sample images manifest not found.",
+        )
+    try:
+        with open(MANIFEST_PATH, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+        return manifest
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to read sample images manifest: {str(e)}",
+        )
+
+
+@router.get(
+    "/sample-images/{sample_id}/{channel}",
+    status_code=status.HTTP_200_OK,
+)
+def get_sample_image_file(sample_id: str, channel: str):
+    """GET /api/v1/sample-images/{sample_id}/{channel}
+
+    Serves the IR or WV PNG image for a given sample_id.
+    channel: 'ir' or 'wv'
+    """
+    channel_lower = channel.lower()
+    if channel_lower not in {"ir", "wv"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid channel. Must be 'ir' or 'wv'.",
+        )
+
+    if not MANIFEST_PATH.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sample images manifest not found.",
+        )
+
+    with open(MANIFEST_PATH, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    sample = next((s for s in manifest if s["id"] == sample_id), None)
+    if not sample:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Sample '{sample_id}' not found in manifest.",
+        )
+
+    filename = sample["ir_filename"] if channel_lower == "ir" else sample["wv_filename"]
+    image_path = SAMPLE_IMAGES_DIR / filename
+
+    if not image_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Image file '{filename}' not found on server.",
+        )
+
+    return FileResponse(path=image_path, media_type="image/png")
+
 

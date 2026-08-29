@@ -29,13 +29,15 @@ from app.training.dataset_loader import (
 
 
 def channel_to_pil_image(channel_data: np.ndarray) -> Image.Image:
-    """Convert floating-point satellite channel data (with possible NaNs) into an 8-bit grayscale PIL Image."""
-    clean_data = np.nan_to_num(channel_data, nan=0.0)
+    """Convert floating-point satellite channel data (with possible NaNs) into an 8-bit grayscale PIL Image.
+    Inverts temperature/intensity scale so cold clouds appear white/bright and warm ocean appears dark.
+    """
+    clean_data = np.nan_to_num(channel_data, nan=channel_data[~np.isnan(channel_data)].max() if np.any(~np.isnan(channel_data)) else 0.0)
     c_min = clean_data.min()
     c_max = clean_data.max()
 
     if c_max > c_min:
-        norm = (clean_data - c_min) / (c_max - c_min) * 255.0
+        norm = (c_max - clean_data) / (c_max - c_min) * 255.0
     else:
         norm = np.zeros_like(clean_data)
 

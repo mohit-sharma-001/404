@@ -4,6 +4,7 @@ import { Header } from '../components/Header';
 import { HeroSection } from '../components/HeroSection';
 import { AdaptiveUploadCard, detectImageSpectrum } from '../components/AdaptiveUploadCard';
 import { PresetSelector } from '../components/PresetSelector';
+import { SampleLibrary } from '../components/SampleLibrary';
 import { PredictionCard } from '../components/PredictionCard';
 import { CategoryScale } from '../components/CategoryScale';
 import { TrackPredictionSection } from '../components/TrackPredictionSection';
@@ -26,6 +27,7 @@ import type {
 export const Dashboard: React.FC = () => {
   const [selectedChannel, setSelectedChannel] = useState<SatelliteChannel>('IR');
   const [uploadedImage, setUploadedImage] = useState<UploadedImageFile | null>(null);
+  const [wvUploadedImage, setWvUploadedImage] = useState<UploadedImageFile | null>(null);
 
   const [status, setStatus] = useState<AnalysisStatus>('idle');
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
@@ -59,12 +61,24 @@ export const Dashboard: React.FC = () => {
 
   const handleImageSelect = (img: UploadedImageFile | null) => {
     setUploadedImage(img);
+    setWvUploadedImage(null);
     setError(null);
   };
 
   const handleLoadPreset = (channel: SatelliteChannel, imageFile: UploadedImageFile) => {
     setSelectedChannel(channel);
     setUploadedImage(imageFile);
+    setWvUploadedImage(null);
+    setError(null);
+  };
+
+  const handleSelectSample = (
+    irImg: UploadedImageFile,
+    wvImg: UploadedImageFile | null
+  ) => {
+    setSelectedChannel('IR');
+    setUploadedImage(irImg);
+    setWvUploadedImage(wvImg);
     setError(null);
   };
 
@@ -103,6 +117,8 @@ export const Dashboard: React.FC = () => {
       const result = await apiService.analyzeCyclone({
         channel: selectedChannel,
         image: uploadedImage,
+        irImage: uploadedImage,
+        wvImage: wvUploadedImage,
       });
 
       setPrediction(result);
@@ -174,6 +190,9 @@ export const Dashboard: React.FC = () => {
               Active Mode: <span className="font-bold" style={{ color: currentTheme.accentColor }}>{selectedChannel}</span>
             </div>
           </div>
+
+          {/* "Try a Sample" Library Section */}
+          <SampleLibrary activeChannel={selectedChannel} onSelectSample={handleSelectSample} />
 
           {/* Sample Preset Loader */}
           <PresetSelector onLoadPreset={handleLoadPreset} activeChannel={selectedChannel} />

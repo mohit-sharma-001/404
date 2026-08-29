@@ -117,33 +117,30 @@ def knots_to_kmh(knots: float) -> float:
 
 def wind_speed_to_imd_category(wind_kmh: float, verbose: bool = True) -> str:
     """Map wind speed in km/h to one of 7 IMD categories:
-    - below 31 km/h -> "Depression" (with printed warning)
-    - 31-49 -> "Depression"
-    - 50-61 -> "Deep Depression"
-    - 62-88 -> "Cyclonic Storm"
-    - 89-117 -> "Severe Cyclonic Storm"
-    - 118-167 -> "Very Severe Cyclonic Storm"
+    - 222+ km/h -> "Super Cyclonic Storm"
     - 168-221 -> "Extremely Severe Cyclonic Storm"
-    - 222+ -> "Super Cyclonic Storm"
+    - 118-167 -> "Very Severe Cyclonic Storm"
+    - 89-117 -> "Severe Cyclonic Storm"
+    - 62-88 -> "Cyclonic Storm"
+    - 50-61 -> "Deep Depression"
+    - below 50 -> "Depression" (with warning if below 31)
     """
-    if wind_kmh < 31:
-        if verbose:
+    if wind_kmh >= 222:
+        return "Super Cyclonic Storm"
+    elif wind_kmh >= 168:
+        return "Extremely Severe Cyclonic Storm"
+    elif wind_kmh >= 118:
+        return "Very Severe Cyclonic Storm"
+    elif wind_kmh >= 89:
+        return "Severe Cyclonic Storm"
+    elif wind_kmh >= 62:
+        return "Cyclonic Storm"
+    elif wind_kmh >= 50:
+        return "Deep Depression"
+    else:
+        if wind_kmh < 31 and verbose:
             print(f"Warning: Wind speed {wind_kmh:.2f} km/h is below 31 km/h threshold; mapping to Depression.")
         return "Depression"
-    elif 31 <= wind_kmh <= 49:
-        return "Depression"
-    elif 50 <= wind_kmh <= 61:
-        return "Deep Depression"
-    elif 62 <= wind_kmh <= 88:
-        return "Cyclonic Storm"
-    elif 89 <= wind_kmh <= 117:
-        return "Severe Cyclonic Storm"
-    elif 118 <= wind_kmh <= 167:
-        return "Very Severe Cyclonic Storm"
-    elif 168 <= wind_kmh <= 221:
-        return "Extremely Severe Cyclonic Storm"
-    else:
-        return "Super Cyclonic Storm"
 
 
 def check_missing_vis_summary(h5_path: str, indices: List[int]) -> int:

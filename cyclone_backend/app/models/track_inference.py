@@ -14,11 +14,53 @@ from typing import Any, Dict, Optional, Union
 import numpy as np
 import pandas as pd
 
-from app.training.track_dataset import (
-    FEATURE_COLUMNS,
-    get_compass_direction,
-    haversine_distance,
-)
+FEATURE_COLUMNS = [
+    "LAT",
+    "LON",
+    "STORM_SPEED",
+    "STORM_DIR",
+    "dir_sin",
+    "dir_cos",
+    "DIST2LAND",
+    "month",
+    "dlat_past6h",
+    "dlon_past6h",
+    "dlat_past12h",
+    "dlon_past12h",
+    "dlat_past24h",
+    "dlon_past24h",
+]
+
+
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculates Great-Circle distance in kilometers between two lat/lon points."""
+    R = 6371.0  # Earth radius in km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(dlon / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+
+def get_compass_direction(deg: float) -> str:
+    """Converts a heading angle in degrees (0-360) to a 16-point compass direction."""
+    if deg is None or (isinstance(deg, float) and np.isnan(deg)):
+        return "Unknown"
+    deg = deg % 360
+    directions = [
+        "N", "NNE", "NE", "ENE",
+        "E", "ESE", "SE", "SSE",
+        "S", "SSW", "SW", "WSW",
+        "W", "WNW", "NW", "NNW"
+    ]
+    idx = int(round(deg / 22.5)) % 16
+    return directions[idx]
+
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 TRACK_MODEL_PATH = ROOT_DIR / "data" / "track_model.pkl"
@@ -36,17 +78,12 @@ class TrackModel:
 
     def load_model(self):
         """Loads trained track prediction artifact from pickle.
-        If file is missing, automatically trains the track model or initializes a fallback pipeline.
+        If file is missing, automatically initializes a fallback pipeline.
         """
         if not self.model_path.exists():
-            print(f"⚠️ Track prediction model file not found at '{self.model_path}'. Attempting auto-training...")
-            try:
-                from app.training.train_track import train_track_model
-                train_track_model()
-            except Exception as train_err:
-                print(f"⚠️ Auto-training skipped/failed ({str(train_err)}). Initializing fallback track pipeline...")
-                self._initialize_fallback_pipeline()
-                return
+            print(f"⚠️ Track prediction model file not found at '{self.model_path}'. Initializing fallback track pipeline...")
+            self._initialize_fallback_pipeline()
+            return
 
         try:
             with open(self.model_path, "rb") as f:
