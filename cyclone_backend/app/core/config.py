@@ -11,6 +11,9 @@ class Settings(BaseModel):
     GLOBAL_TCIR_DATA_PATH: str = os.environ.get(
         "GLOBAL_TCIR_DATA_PATH", "data/raw/TCIR-ATLN_EPAC_WPAC.h5"
     )
+    TCIR_2017_DATA_PATH: str = os.environ.get(
+        "TCIR_2017_DATA_PATH", "data/raw/TCIR-ALL_2017.h5"
+    )
 
 
 settings = Settings()

@@ -30,8 +30,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Wire API routes under /api/v1 prefix
+# Wire API routes under /api/v1 prefix and root
 app.include_router(api_router, prefix="/api/v1")
+app.include_router(api_router)
 
 
 @app.get("/health")

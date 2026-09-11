@@ -4,6 +4,7 @@ Replaces dummy dataset with real dataset built on TCIR HDF5 imagery data.
 Supports single-file (Indian Ocean) and multi-file (Global + Indian Ocean) pretraining/fine-tuning pipelines.
 """
 
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple, Union
@@ -19,6 +20,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from app.core.config import settings
+from app.core.satellite_normalize import normalize_satellite_channel
 
 
 # Apply PyTables backward-compatibility patch for pandas HDF5 reading
@@ -62,6 +64,16 @@ def load_tcir_dataframe(h5_path: str = None) -> pd.DataFrame:
     drop rows with missing intensity (Vmax), and add a 'source_file' column.
     """
     h5_path = h5_path or settings.TCIR_DATA_PATH
+    if not os.path.exists(h5_path):
+        for candidate in [
+            os.path.join("cyclone_backend", h5_path),
+            "cyclone_backend/data/raw/TCIR-CPAC_IO_SH.h5",
+            "data/raw/TCIR-CPAC_IO_SH.h5",
+        ]:
+            if os.path.exists(candidate):
+                h5_path = candidate
+                break
+
     _patch_pytables_compat()
     info_df = pd.read_hdf(h5_path, key="info")
 
@@ -97,6 +109,40 @@ def load_global_dataframe(h5_path: str = None) -> pd.DataFrame:
     info_df = pd.read_hdf(h5_path, key="info")
 
     print(f"Global DataFrame Columns: {info_df.columns.tolist()}")
+    print("First 3 rows:")
+    print(info_df.head(3))
+
+    vmax_col = "Vmax" if "Vmax" in info_df.columns else "vmax"
+    if vmax_col in info_df.columns:
+        info_df = info_df.dropna(subset=[vmax_col])
+    else:
+        print(f"Warning: Could not find intensity column in DataFrame. Available columns: {info_df.columns.tolist()}")
+
+    info_df["source_file"] = h5_path
+    return info_df
+
+
+def load_2017_dataframe(h5_path: str = None) -> pd.DataFrame:
+    """Load 2017 TCIR info dataframe from TCIR-ALL_2017.h5 using PyTables compatibility patch,
+    drop rows with missing Vmax, and add a 'source_file' column.
+    """
+    if h5_path is None:
+        candidates = [
+            getattr(settings, "TCIR_2017_DATA_PATH", "data/raw/TCIR-ALL_2017.h5"),
+            "cyclone_backend/data/raw/TCIR-ALL_2017.h5",
+            "data/raw/TCIR-ALL_2017.h5",
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                h5_path = c
+                break
+        if h5_path is None:
+            h5_path = getattr(settings, "TCIR_2017_DATA_PATH", "data/raw/TCIR-ALL_2017.h5")
+
+    _patch_pytables_compat()
+    info_df = pd.read_hdf(h5_path, key="info")
+
+    print(f"2017 DataFrame Columns: {info_df.columns.tolist()}")
     print("First 3 rows:")
     print(info_df.head(3))
 
@@ -263,33 +309,23 @@ class TCIRDataset(Dataset):
         vis_is_zero = (np.nan_to_num(vis, nan=0.0) == 0).all()
         if vis_is_nan or vis_is_zero:
             vis_was_missing = True
-            vis_ch = np.nan_to_num(ir1, nan=0.0).copy()
+            vis_ch = ir1.copy()
         else:
             vis_was_missing = False
-            vis_ch = np.nan_to_num(vis, nan=0.0).copy()
+            vis_ch = vis.copy()
 
-        # Handle NaNs for remaining channels
-        ir1_ch = np.nan_to_num(ir1, nan=0.0)
-        wv_ch = np.nan_to_num(wv, nan=0.0)
-        pmw_ch = np.nan_to_num(pmw, nan=0.0)
+        # Normalize each channel independently using shared normalize_satellite_channel
+        # Fixed convention: LOW values (near 0.0) = cold cloud tops, HIGH values (near 1.0) = warm background
+        ir1_norm = normalize_satellite_channel(ir1)
+        wv_norm = normalize_satellite_channel(wv)
+        vis_norm = normalize_satellite_channel(vis_ch)
+        pmw_norm = normalize_satellite_channel(pmw)
 
         # Stack into (4, H, W) numpy array
-        channels = np.stack([ir1_ch, wv_ch, vis_ch, pmw_ch], axis=0)
+        channels = np.stack([ir1_norm, wv_norm, vis_norm, pmw_norm], axis=0)
 
         # Convert to float PyTorch tensor
         tensor = torch.from_numpy(channels).float()
-
-        # Replace any remaining NaNs with 0
-        tensor = torch.nan_to_num(tensor, nan=0.0)
-
-        # Normalize each channel independently to [0, 1] range
-        for c in range(4):
-            c_min = tensor[c].min()
-            c_max = tensor[c].max()
-            if c_max > c_min:
-                tensor[c] = (tensor[c] - c_min) / (c_max - c_min)
-            else:
-                tensor[c] = torch.zeros_like(tensor[c])
 
         # Resize to (4, 224, 224)
         tensor = torch.nn.functional.interpolate(
@@ -357,16 +393,43 @@ def combine_and_split(
 ) -> Tuple[Dict[str, List[int]], Dict[str, List[int]], Dict[str, List[int]], Dict[str, List[int]], pd.DataFrame]:
     """Load both Indian Ocean and Global TCIR datasets, perform separate storm-level splits,
     and return stage1_train, stage2_train, stage2_val, stage2_test index dicts and combined info DataFrame.
+    If global_h5_path doesn't exist on disk, falls back to TCIR-ALL_2017.h5 for Stage 1 pretraining.
     """
     io_h5_path = io_h5_path or settings.TCIR_DATA_PATH
+    if not os.path.exists(io_h5_path):
+        alt_io = os.path.join("cyclone_backend", io_h5_path)
+        if os.path.exists(alt_io):
+            io_h5_path = alt_io
+
     global_h5_path = global_h5_path or settings.GLOBAL_TCIR_DATA_PATH
+    if not os.path.exists(global_h5_path):
+        alt_global = os.path.join("cyclone_backend", global_h5_path)
+        if os.path.exists(alt_global):
+            global_h5_path = alt_global
 
     print(f"--- Combining Datasets ---")
     print(f"Loading Indian Ocean Dataset: {io_h5_path}")
     io_df = load_tcir_dataframe(io_h5_path)
 
-    print(f"\nLoading Global Dataset: {global_h5_path}")
-    global_df = load_global_dataframe(global_h5_path)
+    # Check if global dataset exists or if 2017 fallback is required
+    use_2017_fallback = not os.path.exists(global_h5_path)
+    if use_2017_fallback:
+        print("\nGlobal dataset not found — using TCIR-ALL_2017.h5 for Stage 1 pretraining instead (smaller, less diverse than the full global set).")
+        global_df = load_2017_dataframe()
+        stage1_source_path = global_df["source_file"].iloc[0]
+    else:
+        print(f"\nLoading Global Dataset: {global_h5_path}")
+        global_df = load_global_dataframe(global_h5_path)
+        stage1_source_path = global_h5_path
+
+    storm_col = "ID" if "ID" in io_df.columns else "id"
+
+    # Ensure strict storm-level separation: no storm used in Stage 1 should also appear in Stage 2 train/val/test
+    io_storm_ids = set(io_df[storm_col].unique())
+    overlapping_storms = set(global_df[storm_col].unique()).intersection(io_storm_ids)
+    if overlapping_storms:
+        print(f"Excluding {len(overlapping_storms)} overlapping storm(s) from Stage 1 to strictly maintain Stage 1 / Stage 2 separation.")
+        global_df = global_df[~global_df[storm_col].isin(io_storm_ids)]
 
     # Storm-level split for Global dataset (Stage 1 pretraining)
     g_train_idx, g_val_idx, g_test_idx = get_storm_level_split(global_df, val_frac=val_frac, test_frac=test_frac, seed=seed)
@@ -374,7 +437,7 @@ def combine_and_split(
     # Storm-level split for Indian Ocean dataset (Stage 2 fine-tuning / val / test)
     io_train_idx, io_val_idx, io_test_idx = get_storm_level_split(io_df, val_frac=val_frac, test_frac=test_frac, seed=seed)
 
-    stage1_train = {global_h5_path: g_train_idx}
+    stage1_train = {stage1_source_path: g_train_idx}
     stage2_train = {io_h5_path: io_train_idx}
     stage2_val = {io_h5_path: io_val_idx}
     stage2_test = {io_h5_path: io_test_idx}
@@ -382,7 +445,6 @@ def combine_and_split(
     combined_info_df = pd.concat([global_df, io_df], axis=0)
 
     # Print summary statistics
-    storm_col = "ID" if "ID" in io_df.columns else "id"
     io_storms = io_df[storm_col].nunique()
     g_storms = global_df[storm_col].nunique()
 
@@ -391,13 +453,14 @@ def combine_and_split(
     s2_val_storms = io_df.loc[io_val_idx, storm_col].nunique()
     s2_test_storms = io_df.loc[io_test_idx, storm_col].nunique()
 
+    dataset_title = "2017 Fallback Dataset" if use_2017_fallback else "Global Dataset"
     print(f"\n==================================================")
     print(f"         TCIR MULTI-DATASET SPLIT SUMMARY         ")
     print(f"==================================================")
     print(f"Indian Ocean Dataset: {io_storms:<4} storms | {len(io_df):<5} images")
-    print(f"Global Dataset:       {g_storms:<4} storms | {len(global_df):<5} images")
+    print(f"{dataset_title}:       {g_storms:<4} storms | {len(global_df):<5} images")
     print(f"--------------------------------------------------")
-    print(f"Stage 1 Train (Global Pretraining):  {s1_train_storms:<4} storms | {len(g_train_idx):<5} images")
+    print(f"Stage 1 Train (Pretraining):         {s1_train_storms:<4} storms | {len(g_train_idx):<5} images")
     print(f"Stage 2 Train (IO Fine-tuning):     {s2_train_storms:<4} storms | {len(io_train_idx):<5} images")
     print(f"Stage 2 Val   (IO Validation):      {s2_val_storms:<4} storms | {len(io_val_idx):<5} images")
     print(f"Stage 2 Test  (IO Test):            {s2_test_storms:<4} storms | {len(io_test_idx):<5} images")

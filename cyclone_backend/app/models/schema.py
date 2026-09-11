@@ -17,6 +17,8 @@ class PredictionResponse(BaseModel):
     sources_used: list[str]
     is_valid_input: bool = True
     warning_message: str | None = None
+    cyclone_probability: float | None = None
+    category_confidence: float | None = None
 
 
 

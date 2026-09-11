@@ -182,10 +182,16 @@ async def predict_cyclone(
             detail=f"Corrupted or invalid image data. Processing failed: {str(e)}",
         )
 
-    # 5. Model prediction overrides for "Not a Cyclone" or invalid inputs
-    has_cyclone = pred_dict.get("has_cyclone", True)
+    # 5. Model prediction evaluation using decoupled cyclone_probability and category_confidence
+    cyclone_prob = pred_dict.get("cyclone_probability", 0.0)
+    category_conf = pred_dict.get("category_confidence", pred_dict.get("confidence", 0.0))
+    top1_overall_idx = pred_dict.get("top1_overall_idx", 7)
+    top_cat = pred_dict.get("top_category") or pred_dict.get("intensity_category")
+    second_cat = pred_dict.get("second_category")
 
-    if not has_cyclone or pred_dict.get("intensity_category") == "Not a Cyclone":
+    # Use cyclone_probability (not raw top-1 confidence) to decide has_cyclone and is_valid_input:
+    # If heuristic image check failed, or cyclone_probability < 0.85, or top overall predicted class is "Not a Cyclone":
+    if not is_valid_input or cyclone_prob < 0.85 or top1_overall_idx == 7:
         is_valid_input = False
         warning_message = "No cyclone detected in this image. This does not appear to be cyclone satellite imagery."
         pred_dict["has_cyclone"] = False
@@ -193,16 +199,30 @@ async def predict_cyclone(
         pred_dict["estimated_wind_speed_kmh"] = None
         pred_dict["secondary_category"] = None
         pred_dict["secondary_confidence"] = None
+        pred_dict["confidence"] = 0.0
     else:
-        # Additional warning if model confidence is below 0.35
-        confidence = pred_dict.get("confidence", 1.0)
-        if confidence < 0.35:
-            is_valid_input = False
-            low_conf_warn = "Low model confidence — this may not be a valid cyclone satellite image"
+        # Genuine cyclone detected (cyclone_probability >= 0.85 and top1_overall_idx != 7)
+        has_cyclone = True
+        is_valid_input = True
+        pred_dict["has_cyclone"] = True
+        pred_dict["intensity_category"] = top_cat
+
+        # Separately, if category_confidence is below threshold (0.35), keep has_cyclone=True
+        # but attach uncertainty warning and surface the secondary category
+        if category_conf < 0.35:
+            uncertain_warn = (
+                f"Cyclone detected, but the model is uncertain about the exact intensity category — "
+                f"likely between {top_cat} and {second_cat}."
+            )
             if warning_message:
-                warning_message = f"{warning_message} | {low_conf_warn}"
+                warning_message = f"{warning_message} | {uncertain_warn}"
             else:
-                warning_message = low_conf_warn
+                warning_message = uncertain_warn
+
+            # Ensure secondary_category is surfaced
+            pred_dict["secondary_category"] = second_cat
+            if pred_dict.get("secondary_confidence") is None:
+                pred_dict["secondary_confidence"] = pred_dict.get("second_category_confidence", 0.0)
 
         # Rare category warning (informational note, does not affect is_valid_input)
         intensity_category = pred_dict.get("intensity_category", "")
@@ -221,13 +241,6 @@ async def predict_cyclone(
                 warning_message = f"{warning_message} | {single_src_warn}"
             else:
                 warning_message = single_src_warn
-
-    # If input is invalid (e.g. plot/chart screenshot or non-satellite photo), ensure has_cyclone is False & None wind/intensity
-    if not is_valid_input:
-        pred_dict["has_cyclone"] = False
-        pred_dict["estimated_wind_speed_kmh"] = None
-        pred_dict["intensity_category"] = None
-        pred_dict["confidence"] = 0.0
 
     pred_dict["is_valid_input"] = is_valid_input
     pred_dict["warning_message"] = warning_message

@@ -22,6 +22,8 @@ import numpy as np
 import torch
 from PIL import Image
 
+from app.core.satellite_normalize import normalize_satellite_channel
+
 
 def check_valid_satellite_image(image_bytes: bytes, source_type: str = "IR") -> tuple[bool, str]:
     """Master Verification Filter: Inspects image to ensure it is authentic space-borne satellite imagery
@@ -125,7 +127,8 @@ def check_valid_satellite_image(image_bytes: bytes, source_type: str = "IR") -> 
 
 def preprocess_single_channel(image_bytes: bytes) -> np.ndarray:
     """Helper function to load an image from bytes, convert to grayscale (1 channel),
-    resize to 224x224, and normalize pixel values to float range [0.0, 1.0].
+    resize to 224x224, and normalize pixel values to float range [0.0, 1.0] using
+    the shared normalize_satellite_channel function.
     """
     try:
         image = Image.open(io.BytesIO(image_bytes))
@@ -139,10 +142,13 @@ def preprocess_single_channel(image_bytes: bytes) -> np.ndarray:
         image.thumbnail((4000, 4000), Image.Resampling.LANCZOS)
 
     image = image.convert("L")  # Convert image to grayscale (single channel)
-    image = image.resize((224, 224))  # Resize to 224x224 pixels
-    img_array = np.array(image, dtype=np.float32) / 255.0  # Normalize pixel values to 0-1
-    img_array = 1.0 - img_array  # Invert pixel values so bright cloud tops (high PNG values) map to low values matching training dataset
-    return img_array
+    image = image.resize((224, 224), Image.Resampling.BILINEAR)  # Resize to 224x224 using bilinear interpolation matching training
+    raw_array = np.array(image, dtype=np.float32)
+
+    # Invert pixel values so bright cloud tops (high pixel values in standard PNG/JPEG)
+    # map to low values, matching the training dataset convention (cold cloud tops = low values)
+    inverted_array = 255.0 - raw_array
+    return normalize_satellite_channel(inverted_array)
 
 
 def preprocess_multisource(
