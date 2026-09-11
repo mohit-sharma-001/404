@@ -39,8 +39,13 @@ from app.training.negative_dataset import get_negative_samples
 
 PRETRAINED_CHECKPOINT_PATH = "data/model_checkpoint_pretrained.pth"
 
-# Device selection (CUDA GPU if available, else CPU)
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Device selection (Apple Silicon MPS if available, else CUDA GPU, else CPU)
+if torch.backends.mps.is_available():
+    device = torch.device("mps")
+elif torch.cuda.is_available():
+    device = torch.device("cuda")
+else:
+    device = torch.device("cpu")
 print(f"Using device: {device}")
 
 
@@ -150,7 +155,7 @@ def run_stage1_pretraining(
         for images, labels, wind_speed, vis_was_missing in train_loader:
             images = images.to(device)
             labels = labels.to(device)
-            wind_speed = wind_speed.to(device)
+            wind_speed = wind_speed.float().to(device)
 
             optimizer.zero_grad()
             class_logits, speed_preds = model(images)
@@ -185,7 +190,7 @@ def run_stage1_pretraining(
             for images, labels, wind_speed, vis_was_missing in val_loader:
                 images = images.to(device)
                 labels = labels.to(device)
-                wind_speed = wind_speed.to(device)
+                wind_speed = wind_speed.float().to(device)
 
                 class_logits, speed_preds = model(images)
                 loss_class = criterion_classification(class_logits, labels)
@@ -303,7 +308,7 @@ def run_stage2_finetuning(
         for images, labels, wind_speed, vis_was_missing in train_loader:
             images = images.to(device)
             labels = labels.to(device)
-            wind_speed = wind_speed.to(device)
+            wind_speed = wind_speed.float().to(device)
 
             optimizer.zero_grad()
             class_logits, speed_preds = model(images)
@@ -338,7 +343,7 @@ def run_stage2_finetuning(
             for images, labels, wind_speed, vis_was_missing in val_loader:
                 images = images.to(device)
                 labels = labels.to(device)
-                wind_speed = wind_speed.to(device)
+                wind_speed = wind_speed.float().to(device)
 
                 class_logits, speed_preds = model(images)
                 loss_class = criterion_classification(class_logits, labels)
@@ -414,7 +419,7 @@ def run_final_evaluation(
         for images, labels, wind_speed, vis_was_missing in test_loader:
             images = images.to(device)
             labels = labels.to(device)
-            wind_speed = wind_speed.to(device)
+            wind_speed = wind_speed.float().to(device)
 
             class_logits, speed_preds = model(images)
 

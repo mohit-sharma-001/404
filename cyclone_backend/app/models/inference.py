@@ -161,24 +161,32 @@ class CycloneModel:
         with torch.no_grad():
             class_logits, wind_speed_raw = self.model(tensor)
 
-            # Convert logits to category probabilities via Softmax
+            # Convert logits to category probabilities via Softmax over all 8 classes
             probs = F.softmax(class_logits, dim=1)
 
-            # Compute top-2 predictions and probabilities
-            top2_probs, top2_indices = torch.topk(probs, k=2, dim=1)
+            # 1. cyclone_probability = sum of probabilities for classes 0-6 (genuine cyclone categories combined)
+            cyclone_probability = float(probs[0, :7].sum().item())
 
-            top1_idx = top2_indices[0, 0].item()
-            top1_conf = float(top2_probs[0, 0].item())
-            intensity_category = INTENSITY_CATEGORIES[top1_idx]
+            # Top predicted class overall (across all 8 classes including class 7 "Not a Cyclone")
+            top1_overall_idx = torch.argmax(probs, dim=1).item()
 
-            top2_idx = top2_indices[0, 1].item()
-            top2_conf = float(top2_probs[0, 1].item())
-            top2_category = INTENSITY_CATEGORIES[top2_idx]
+            # 2. category_confidence = top-1 probability among classes 0-6 only (renormalized)
+            cyclone_probs = probs[0, :7]
+            renorm_probs = cyclone_probs / (cyclone_probability + 1e-9)
 
-            # Populate secondary category & confidence only if within 15 percentage points (0.15) of top prediction
-            if (top1_conf - top2_conf) <= 0.15:
-                secondary_category = top2_category
-                secondary_confidence = min(1.0, max(0.0, round(top2_conf, 4)))
+            top2_renorm_probs, top2_renorm_indices = torch.topk(renorm_probs, k=2)
+            top1_cat_idx = top2_renorm_indices[0].item()
+            category_confidence = float(top2_renorm_probs[0].item())
+            top_category = INTENSITY_CATEGORIES[top1_cat_idx]
+
+            top2_cat_idx = top2_renorm_indices[1].item()
+            second_category_confidence = float(top2_renorm_probs[1].item())
+            second_category = INTENSITY_CATEGORIES[top2_cat_idx]
+
+            # Populate secondary category & confidence if within 15 percentage points (0.15) OR if category confidence < 0.35
+            if (category_confidence < 0.35) or ((category_confidence - second_category_confidence) <= 0.15):
+                secondary_category = second_category
+                secondary_confidence = min(1.0, max(0.0, round(second_category_confidence, 4)))
             else:
                 secondary_category = None
                 secondary_confidence = None
@@ -188,41 +196,23 @@ class CycloneModel:
             # Cold cloud tops map to low pixel values (< 0.48) in training normalization scale
             convective_pixels_ratio = float((ir_channel < 0.48).float().mean().item())
 
-            # Central 50% region (rows 56 to 168, cols 56 to 168)
-            central_region = ir_channel[56:168, 56:168]
-            central_convection_ratio = float((central_region < 0.42).float().mean().item())
-
             # Physical Cloud Structure Calibration:
             raw_speed = max(0.0, float(wind_speed_raw.item()))
 
-            if top1_idx == 7:
-                # Case A: Clear ocean / normal sea map or classified as Not a Cyclone
-                has_cyclone = False
-                wind_speed_kmh = round(min(32.0, max(12.0, raw_speed * 0.22)), 2)
-            else:
-                # Case B & C: Genuine Cyclone (Smooth continuous convective scaling)
+            # Determine has_cyclone: genuine cyclone requires cyclone_probability >= 0.85 and top predicted class != 7
+            if (cyclone_probability >= 0.85) and (top1_overall_idx != 7):
                 has_cyclone = True
                 conv_factor = float(np.clip(0.55 + (convective_pixels_ratio - 0.10) * (0.45 / 0.15), 0.55, 1.0))
                 wind_speed_kmh = round(max(42.0, raw_speed * conv_factor), 2)
-
-            # Ensure IMD intensity category strictly aligns with estimated wind speed
-            def get_imd_category(speed_kmh: float) -> str:
-                if speed_kmh >= 221:
-                    return "Super Cyclonic Storm"
-                elif speed_kmh >= 166:
-                    return "Extremely Severe Cyclonic Storm"
-                elif speed_kmh >= 118:
-                    return "Very Severe Cyclonic Storm"
-                elif speed_kmh >= 89:
-                    return "Severe Cyclonic Storm"
-                elif speed_kmh >= 62:
-                    return "Cyclonic Storm"
-                elif speed_kmh >= 50:
-                    return "Deep Depression"
-                else:
-                    return "Depression"
-
-            intensity_category = get_imd_category(wind_speed_kmh)
+                intensity_category = top_category
+                final_confidence = min(1.0, max(0.0, round(category_confidence, 4)))
+            else:
+                has_cyclone = False
+                wind_speed_kmh = round(min(32.0, max(12.0, raw_speed * 0.22)), 2)
+                intensity_category = None
+                final_confidence = 0.0
+                secondary_category = None
+                secondary_confidence = None
 
         return {
             "has_cyclone": has_cyclone,
@@ -230,9 +220,15 @@ class CycloneModel:
             "center_lon": None,
             "intensity_category": intensity_category,
             "secondary_category": secondary_category,
-            "estimated_wind_speed_kmh": round(wind_speed_kmh, 2),
-            "confidence": min(1.0, max(0.0, round(top1_conf, 4))),
+            "estimated_wind_speed_kmh": wind_speed_kmh if has_cyclone else None,
+            "confidence": final_confidence,
             "secondary_confidence": secondary_confidence,
+            "cyclone_probability": min(1.0, max(0.0, round(cyclone_probability, 4))),
+            "category_confidence": min(1.0, max(0.0, round(category_confidence, 4))),
+            "top1_overall_idx": top1_overall_idx,
+            "top_category": top_category,
+            "second_category": second_category,
+            "second_category_confidence": min(1.0, max(0.0, round(second_category_confidence, 4))),
             "trend": "Steady",
             "trend_confidence": 0.5,
             "sources_used": sources_used,

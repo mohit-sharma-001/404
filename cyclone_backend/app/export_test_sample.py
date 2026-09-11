@@ -20,6 +20,7 @@ import numpy as np
 from PIL import Image
 
 from app.core.config import settings
+from app.core.satellite_normalize import normalize_satellite_channel
 from app.training.dataset_loader import (
     get_storm_level_split,
     knots_to_kmh,
@@ -31,17 +32,13 @@ from app.training.dataset_loader import (
 def channel_to_pil_image(channel_data: np.ndarray) -> Image.Image:
     """Convert floating-point satellite channel data (with possible NaNs) into an 8-bit grayscale PIL Image.
     Inverts temperature/intensity scale so cold clouds appear white/bright and warm ocean appears dark.
+    Uses shared normalize_satellite_channel for single source of truth.
     """
-    clean_data = np.nan_to_num(channel_data, nan=channel_data[~np.isnan(channel_data)].max() if np.any(~np.isnan(channel_data)) else 0.0)
-    c_min = clean_data.min()
-    c_max = clean_data.max()
-
-    if c_max > c_min:
-        norm = (c_max - clean_data) / (c_max - c_min) * 255.0
-    else:
-        norm = np.zeros_like(clean_data)
-
-    return Image.fromarray(norm.astype(np.uint8))
+    norm = normalize_satellite_channel(channel_data)
+    # Invert normalized values (0.0=cold cloud tops, 1.0=warm background)
+    # to standard 8-bit display pixels (255=cold/bright white, 0=warm/dark)
+    img_array = (1.0 - norm) * 255.0
+    return Image.fromarray(img_array.astype(np.uint8))
 
 
 def export_test_samples(num_samples: int = 3, output_dir: str = "data/test_samples", seed: int = 123):

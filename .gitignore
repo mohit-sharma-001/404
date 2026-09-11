@@ -1,5 +1,33 @@
-# Logs
-logs
+# ==============================================================================
+# Virtual Environments
+# ==============================================================================
+.venv/
+.venv
+venv/
+env/
+ENV/
+
+# ==============================================================================
+# Python Bytecode, Caches & Testing
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+*.egg
+build/
+
+# ==============================================================================
+# Node.js / Vite Frontend
+# ==============================================================================
+node_modules/
+dist/
+dist-ssr/
+*.local
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,16 +35,58 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# ==============================================================================
+# Databases & SQLite
+# ==============================================================================
+*.db
+*.sqlite
+*.sqlite3
+cyclone.db
 
-# Editor directories and files
+# ==============================================================================
+# Large Datasets, Model Artifacts & Temp Files
+# ==============================================================================
+# Ignore raw 17GB+ TCIR HDF5 datasets
+cyclone_backend/data/raw/*.h5
+data/raw/*.h5
+
+# Model Checkpoints (preserve model_checkpoint.pth and track_model.pkl)
+cyclone_backend/data/*.pth
+!cyclone_backend/data/model_checkpoint.pth
+cyclone_backend/data/*.pkl
+!cyclone_backend/data/track_model.pkl
+
+# Preserve sample images and keep folders
+cyclone_backend/data/test_samples/*
+!cyclone_backend/data/test_samples/.gitkeep
+cyclone_backend/data/negatives/*
+!cyclone_backend/data/negatives/.gitkeep
+cyclone_backend/data/processed/*
+!cyclone_backend/data/processed/.gitkeep
+
+# Archives and downloads
+temp_downloads/
+*.tar.gz
+cyclone_app_colab.zip
+
+# Accidental root data folder (data belongs inside cyclone_backend/data/)
+/data/
+
+# ==============================================================================
+# Environment & Secrets
+# ==============================================================================
+.env
+.env.local
+.env.*.local
+
+# ==============================================================================
+# Operating System & IDE Files
+# ==============================================================================
+.DS_Store
+Thumbs.db
+.idea/
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
 *.suo
 *.ntvs*
 *.njsproj
