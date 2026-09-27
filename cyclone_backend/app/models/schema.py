@@ -19,6 +19,8 @@ class PredictionResponse(BaseModel):
     warning_message: str | None = None
     cyclone_probability: float | None = None
     category_confidence: float | None = None
+    email_sent: bool = False
+    recipient_email: str | None = None
 
 
 

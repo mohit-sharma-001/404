@@ -18,6 +18,7 @@ Beginner Concepts:
 """
 
 import io
+import cv2
 import numpy as np
 import torch
 from PIL import Image
@@ -87,9 +88,41 @@ def check_valid_satellite_image(image_bytes: bytes, source_type: str = "IR") -> 
                     f"Non-satellite photo/graphic detected ({mean_color_std:.1f} color std). Upload authentic VIS satellite imagery.",
                 )
 
-        # 5. Non-Satellite Texture & Outline Edge Analysis
-        # Detects object outlines, furniture edges, human shapes, text fonts, map borders, UI elements
         gray = np.mean(img_array, axis=2)
+
+        # 5. Dark Background with Small Unstructured Bright Region Check (Avatars, CCTV, Night Photos)
+        # Genuine cyclone eyes/cores are roughly circular/organized with smooth cloud bands.
+        # Images with >70% very dark background (< 15% dynamic range) must exhibit an organized circular bright core.
+        dark_threshold = 255.0 * 0.15  # Bottom 15% of 0-255 range (~38.25)
+        very_dark_fraction = float(np.mean(gray < dark_threshold))
+
+        if very_dark_fraction > 0.70:
+            bright_threshold = 120.0 if np.max(gray) >= 120.0 else 90.0
+            bright_mask = (gray >= bright_threshold).astype(np.uint8) * 255
+            contours, _ = cv2.findContours(bright_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            significant_contours = [c for c in contours if cv2.contourArea(c) >= 20.0]
+
+            if not significant_contours:
+                return (
+                    False,
+                    "Bright region pattern is not consistent with organized cyclone cloud structure",
+                )
+
+            # Check shape regularity / circularity of the dominant bright region
+            c = max(significant_contours, key=cv2.contourArea)
+            contour_area = float(cv2.contourArea(c))
+            (_, _), radius = cv2.minEnclosingCircle(c)
+            circle_area = float(np.pi * (radius ** 2))
+            circularity_ratio = float(contour_area / circle_area) if circle_area > 0 else 0.0
+
+            if circularity_ratio < 0.5:
+                return (
+                    False,
+                    "Bright region pattern is not consistent with organized cyclone cloud structure",
+                )
+
+        # 6. Non-Satellite Texture & Outline Edge Analysis
+        # Detects object outlines, furniture edges, human shapes, text fonts, map borders, UI elements
         dx = np.abs(np.diff(gray, axis=1))
         dy = np.abs(np.diff(gray, axis=0))
         mean_edge_intensity = float(np.mean(dx) + np.mean(dy))
@@ -102,7 +135,7 @@ def check_valid_satellite_image(image_bytes: bytes, source_type: str = "IR") -> 
                 "Non-satellite object or graphic detected (unnatural sharp object outlines / text / line art / UI graphics).",
             )
 
-        # 5b. Line Art / Black-and-White Sketch Filter
+        # 6b. Line Art / Black-and-White Sketch Filter
         # Detects sketches, line drawings, and high-contrast graphics with solid black background
         black_ratio = float(np.mean(gray < 20.0))
         white_stroke_ratio = float(np.mean(gray > 230.0))
@@ -112,7 +145,7 @@ def check_valid_satellite_image(image_bytes: bytes, source_type: str = "IR") -> 
                 "Non-satellite graphic detected (black-and-white sketch / line drawing / high-contrast illustration).",
             )
 
-        # 6. Satellite Cloud Lightness & Background Check
+        # 7. Satellite Cloud Lightness & Background Check
         mean_lightness = float(np.mean(gray))
         if mean_lightness > 210.0 or mean_lightness < 8.0:
             return (

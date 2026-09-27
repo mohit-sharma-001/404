@@ -1,19 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { Play, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Play, RefreshCw, Mail } from 'lucide-react';
 import { Header } from '../components/Header';
 import { HeroSection } from '../components/HeroSection';
-import { AdaptiveUploadCard, detectImageSpectrum } from '../components/AdaptiveUploadCard';
-import { PresetSelector } from '../components/PresetSelector';
+import { AdaptiveUploadCard } from '../components/AdaptiveUploadCard';
+import { SampleLibrary } from '../components/SampleLibrary';
 import { PredictionCard } from '../components/PredictionCard';
 import { CategoryScale } from '../components/CategoryScale';
 import { TrackPredictionSection } from '../components/TrackPredictionSection';
 import { HistorySection } from '../components/HistorySection';
+import { ModelStatsTable } from '../components/ModelStatsTable';
 import { AdvisoryNote } from '../components/AdvisoryNote';
 import { ErrorAlert } from '../components/ErrorAlert';
 import { DestructionAlertModal } from '../components/DestructionAlertModal';
 import { TargetCursor } from '../components/effects/TargetCursor';
 import { OceanBackground } from '../components/effects/OceanBackground';
-import { apiService } from '../services/api';
+import { apiService, type SampleImageItem } from '../services/api';
 import { THEMES } from '../theme/themeSystem';
 import type {
   AnalysisStatus,
@@ -25,19 +26,26 @@ import type {
 
 export const Dashboard: React.FC = () => {
   const [selectedChannel, setSelectedChannel] = useState<SatelliteChannel>('IR');
-  const [uploadedImage, setUploadedImage] = useState<UploadedImageFile | null>(null);
-  const [wvUploadedImage, setWvUploadedImage] = useState<UploadedImageFile | null>(null);
+  const [irImage, setIrImage] = useState<UploadedImageFile | null>(null);
+  const [wvImage, setWvImage] = useState<UploadedImageFile | null>(null);
+  const [visImage, setVisImage] = useState<UploadedImageFile | null>(null);
+  const [pmwImage, setPmwImage] = useState<UploadedImageFile | null>(null);
 
   const [status, setStatus] = useState<AnalysisStatus>('idle');
   const [prediction, setPrediction] = useState<PredictionResult | null>(null);
+  const [alertEmail, setAlertEmail] = useState('');
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isDestructionAlertOpen, setIsDestructionAlertOpen] = useState<boolean>(false);
 
-  const detectedSpectrum = uploadedImage ? detectImageSpectrum(uploadedImage.name, uploadedImage.uploadedChannel) : null;
-  const isSpectrumMismatch = Boolean(
-    detectedSpectrum && detectedSpectrum !== selectedChannel
-  );
+  const attachedSlots = [
+    irImage ? { channel: 'IR' as SatelliteChannel, image: irImage } : null,
+    wvImage ? { channel: 'WV' as SatelliteChannel, image: wvImage } : null,
+    visImage ? { channel: 'VIS' as SatelliteChannel, image: visImage } : null,
+    pmwImage ? { channel: 'PMW' as SatelliteChannel, image: pmwImage } : null,
+  ].filter(Boolean) as { channel: SatelliteChannel; image: UploadedImageFile }[];
+
+  const hasAnyImage = attachedSlots.length > 0;
 
   // Load history on mount
   useEffect(() => {
@@ -53,21 +61,37 @@ export const Dashboard: React.FC = () => {
     }
   };
 
-  const handleChannelSelect = (channel: SatelliteChannel) => {
-    setSelectedChannel(channel);
+  const handleSlotChange = (channel: SatelliteChannel, img: UploadedImageFile | null) => {
+    if (channel === 'IR') setIrImage(img);
+    else if (channel === 'WV') setWvImage(img);
+    else if (channel === 'VIS') setVisImage(img);
+    else if (channel === 'PMW') setPmwImage(img);
+
+    if (img) {
+      setSelectedChannel(channel);
+    }
     setError(null);
   };
 
-  const handleImageSelect = (img: UploadedImageFile | null) => {
-    setUploadedImage(img);
-    setWvUploadedImage(null);
+  const handleClearAllSlots = () => {
+    setIrImage(null);
+    setWvImage(null);
+    setVisImage(null);
+    setPmwImage(null);
     setError(null);
   };
 
-  const handleLoadPreset = (channel: SatelliteChannel, imageFile: UploadedImageFile) => {
-    setSelectedChannel(channel);
-    setUploadedImage(imageFile);
-    setWvUploadedImage(null);
+  const handleSelectSample = (
+    sampleIr: UploadedImageFile,
+    sampleWv: UploadedImageFile | null,
+    _sample: SampleImageItem,
+    previewChannel?: SatelliteChannel
+  ) => {
+    setSelectedChannel(previewChannel || 'IR');
+    setIrImage(sampleIr);
+    setWvImage(sampleWv);
+    setVisImage(null);
+    setPmwImage(null);
     setError(null);
   };
 
@@ -79,15 +103,8 @@ export const Dashboard: React.FC = () => {
   };
 
   const handleRunAnalysis = async () => {
-    if (!uploadedImage) {
-      setError(`Please upload a satellite image for channel ${selectedChannel} or select a sample preset.`);
-      return;
-    }
-
-    if (isSpectrumMismatch) {
-      setError(
-        `Spectral Mismatch Error: Uploaded image source [${detectedSpectrum}] does not match active mode [${selectedChannel}]. Analysis cannot be run on mismatched satellite imagery. Please upload a valid [${selectedChannel}] satellite image or switch mode to [${detectedSpectrum}].`
-      );
+    if (!hasAnyImage) {
+      setError('Please upload at least one satellite image (IR, WV, VIS, or PMW) or select a sample preset.');
       return;
     }
 
@@ -105,9 +122,11 @@ export const Dashboard: React.FC = () => {
     try {
       const result = await apiService.analyzeCyclone({
         channel: selectedChannel,
-        image: uploadedImage,
-        irImage: uploadedImage,
-        wvImage: wvUploadedImage,
+        irImage,
+        wvImage,
+        visImage,
+        pmwImage,
+        email: alertEmail.trim() || undefined,
       });
 
       setPrediction(result);
@@ -175,65 +194,90 @@ export const Dashboard: React.FC = () => {
                 Unified multi-spectral satellite imagery processing pipeline (IR, VIS, WV, PMW)
               </p>
             </div>
-            <div className={`px-2.5 py-1 rounded-md border text-[11px] font-mono text-slate-300 self-start sm:self-auto transition-colors duration-700 ${currentTheme.statusPillBg} ${currentTheme.statusPillBorder}`}>
-              Active Mode: <span className="font-bold" style={{ color: currentTheme.accentColor }}>{selectedChannel}</span>
+            <div className={`px-2.5 py-1 rounded-md border text-[11px] font-mono text-slate-300 self-start sm:self-auto transition-colors duration-700 ${currentTheme.statusPillBg} ${currentTheme.statusPillBorder} flex items-center space-x-2`}>
+              <span>Active Mode: <strong style={{ color: currentTheme.accentColor }}>{selectedChannel}</strong></span>
+              <span className="text-slate-600">|</span>
+              <span>Attached: <strong className="text-white">{attachedSlots.length}/4</strong></span>
             </div>
           </div>
 
-          {/* Sample Preset Loader */}
-          <PresetSelector onLoadPreset={handleLoadPreset} activeChannel={selectedChannel} />
+          {/* Sample Satellite Imagery Library */}
+          <SampleLibrary
+            activeChannel={selectedChannel}
+            onSelectSample={handleSelectSample}
+          />
 
-          {/* Unified Single Adaptive Upload Component */}
+          {/* Four Simultaneous Multi-Spectral Upload Slots (IR, WV, VIS, PMW) */}
           <AdaptiveUploadCard
-            selectedChannel={selectedChannel}
-            onChannelChange={handleChannelSelect}
-            image={uploadedImage}
-            onImageSelect={handleImageSelect}
+            irImage={irImage}
+            wvImage={wvImage}
+            visImage={visImage}
+            pmwImage={pmwImage}
+            onSlotChange={handleSlotChange}
             onError={(msg) => setError(msg)}
+            onClearAll={handleClearAllSlots}
           />
 
           {/* Instrument Action Control Bar */}
           <div className="p-5 rounded-2xl bg-[#03070E]/90 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 backdrop-blur-2xl shadow-2xl">
             <div className="text-xs text-slate-300">
               <span className="font-semibold text-white block">Ready for Analysis Pipeline</span>
-              {isSpectrumMismatch ? (
-                <div className="flex items-center space-x-1.5 text-xs text-red-400 font-mono font-bold mt-0.5">
-                  <AlertTriangle className="w-4 h-4 text-red-500 animate-pulse shrink-0" />
-                  <span>ANALYSIS BLOCKED: Image spectrum [{detectedSpectrum}] does not match active mode [{selectedChannel}]</span>
-                </div>
+              {hasAnyImage ? (
+                <span className="text-slate-400 font-mono">
+                  Multi-Spectral Input:{' '}
+                  <strong className="text-cyan-400 font-bold">
+                    {attachedSlots.map((s) => s.channel).join(' + ')}
+                  </strong>{' '}
+                  ({attachedSlots.length} band{attachedSlots.length > 1 ? 's' : ''} registered: {attachedSlots.map((s) => s.image.name).join(', ')})
+                </span>
               ) : (
                 <span className="text-slate-400 font-mono">
-                  {uploadedImage
-                    ? `[${selectedChannel}] Ingested file: ${uploadedImage.name}`
-                    : `Upload a satellite image under mode [${selectedChannel}] or select a preset above`}
+                  Attach at least one satellite image (IR, WV, VIS, or PMW) or select a sample preset above
                 </span>
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={handleRunAnalysis}
-              disabled={!uploadedImage || status === 'analyzing' || isSpectrumMismatch}
-              className={`w-full sm:w-auto px-8 py-3.5 rounded-xl font-bold text-xs font-mono uppercase tracking-wider transition-all duration-300 shadow-xl flex items-center justify-center space-x-2 shrink-0 cursor-pointer select-none active:scale-95 ${
-                !uploadedImage || status === 'analyzing' || isSpectrumMismatch
-                  ? 'bg-red-950/40 text-red-400 border border-red-800/80 cursor-not-allowed opacity-80'
-                  : currentTheme.primaryBtn
-              }`}
-            >
-              {status === 'analyzing' ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin text-current" />
-                  <span>Processing {selectedChannel} Analysis...</span>
-                </>
-              ) : isSpectrumMismatch ? (
-                <span>⚠️ Mismatched Spectrum ({detectedSpectrum} vs {selectedChannel})</span>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 fill-current text-current" />
-                  <span>Run Cyclone Analysis</span>
-                </>
-              )}
-            </button>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+              <div className="relative w-full sm:w-72">
+                <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="email"
+                  value={alertEmail}
+                  onChange={(e) => setAlertEmail(e.target.value)}
+                  placeholder="Email for high-severity alerts (optional)"
+                  className={`w-full pl-9 pr-3 py-3 rounded-xl bg-slate-950/80 border text-xs text-white placeholder-slate-500 focus:outline-none transition-colors font-mono ${
+                    alertEmail.trim().length > 0 && !alertEmail.includes('@')
+                      ? 'border-amber-500/80 focus:border-amber-400 focus:ring-1 focus:ring-amber-500/30'
+                      : 'border-slate-800 focus:border-cyan-500/80 focus:ring-1 focus:ring-cyan-500/30'
+                  }`}
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleRunAnalysis}
+                disabled={!hasAnyImage || status === 'analyzing' || (alertEmail.trim().length > 0 && !alertEmail.includes('@'))}
+                className={`w-full sm:w-auto px-8 py-3.5 rounded-xl font-bold text-xs font-mono uppercase tracking-wider transition-all duration-300 shadow-xl flex items-center justify-center space-x-2 shrink-0 cursor-pointer select-none active:scale-95 ${
+                  !hasAnyImage || status === 'analyzing' || (alertEmail.trim().length > 0 && !alertEmail.includes('@'))
+                    ? 'bg-slate-900 text-slate-500 border border-slate-800 cursor-not-allowed opacity-60'
+                    : currentTheme.primaryBtn
+                }`}
+              >
+                {status === 'analyzing' ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin text-current" />
+                    <span>Processing Analysis ({attachedSlots.map((s) => s.channel).join(' + ')})...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 fill-current text-current" />
+                    <span>
+                      Run Cyclone Analysis {attachedSlots.length > 0 ? `(${attachedSlots.map((s) => s.channel).join(' + ')})` : ''}
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </section>
 
@@ -271,9 +315,23 @@ export const Dashboard: React.FC = () => {
           />
         </section>
 
+        {/* 8. Model Performance & Validation Benchmark */}
+        <section id="model-stats-section" className="space-y-4">
+          <div className={`border-b pb-3 transition-colors duration-700 ${currentTheme.sectionDivider}`}>
+            <h2 className="text-xl font-bold text-white tracking-tight">
+              Model Performance & Validation
+            </h2>
+            <p className="text-xs text-slate-400 mt-1">
+              Transparent evaluation benchmarks from the latest multi-spectral intensity and trajectory track forecast models
+            </p>
+          </div>
+
+          <ModelStatsTable />
+        </section>
+
       </main>
 
-      {/* 8. Advisory Disclaimer Footer */}
+      {/* 9. Advisory Disclaimer Footer */}
       <AdvisoryNote activeChannel={selectedChannel} />
     </div>
   );

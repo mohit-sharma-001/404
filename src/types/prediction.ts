@@ -50,6 +50,8 @@ export interface PredictionResult {
     brightnessTemperatureGradient: number;
     waterVapourConvection: number;
   };
+  emailSent?: boolean;
+  recipientEmail?: string;
 }
 
 export interface HistoryItem {

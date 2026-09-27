@@ -42,11 +42,14 @@ lerna-debug.log*
 *.sqlite
 *.sqlite3
 cyclone.db
+cyclone_backend/cyclone.db
 
 # ==============================================================================
 # Large Datasets, Model Artifacts & Temp Files
 # ==============================================================================
-# Ignore raw 17GB+ TCIR HDF5 datasets
+# Ignore raw HDF5 datasets
+*.h5
+*.hdf5
 cyclone_backend/data/raw/*.h5
 data/raw/*.h5
 
@@ -66,7 +69,12 @@ cyclone_backend/data/processed/*
 
 # Archives and downloads
 temp_downloads/
+*.tar
+*.gz
 *.tar.gz
+*.zip
+*.7z
+*.rar
 cyclone_app_colab.zip
 
 # Accidental root data folder (data belongs inside cyclone_backend/data/)
@@ -78,6 +86,11 @@ cyclone_app_colab.zip
 .env
 .env.local
 .env.*.local
+.env.*
+*.env
+*.env.*
+!.env.example
+!*.env.example
 
 # ==============================================================================
 # Operating System & IDE Files
@@ -92,3 +105,9 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# ==============================================================================
+# Local Scratch & Ad-hoc Scripts
+# ==============================================================================
+cyclone_backend/test_real_images.py
+test_real_images.py

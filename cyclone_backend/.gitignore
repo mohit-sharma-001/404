@@ -15,6 +15,8 @@ htmlcov/
 *.egg-info/
 
 # Project Specific Data & Model Artifacts
+*.h5
+*.hdf5
 data/raw/*.h5
 data/*.pth
 !data/model_checkpoint.pth
@@ -25,7 +27,13 @@ data/test_samples/*
 data/negatives/*
 !data/negatives/.gitkeep
 *.tar.gz
+*.tar
+*.gz
+*.zip
 cyclone.db
+*.db
+*.sqlite
+*.sqlite3
 cyclone_app_colab.zip
 !ibtracs.NI.list.v04r01.csv
 
@@ -33,9 +41,18 @@ cyclone_app_colab.zip
 .env
 .env.local
 .env.*.local
+.env.*
+*.env
+*.env.*
+!.env.example
+!*.env.example
 
 # IDE & System Files
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Local Scratch & Ad-hoc Scripts
+test_real_images.py

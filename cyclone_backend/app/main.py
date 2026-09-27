@@ -1,7 +1,12 @@
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router as api_router
+from app.core.model_metrics import get_metrics_ascii_table
 from app.db.database import Base, engine
 
 # Automatically create database tables on startup
@@ -38,3 +43,10 @@ app.include_router(api_router)
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.on_event("startup")
+def startup_model_metrics():
+    """Outputs verified model evaluation metrics to terminal on server launch."""
+    print("\n" + get_metrics_ascii_table() + "\n", flush=True)
+

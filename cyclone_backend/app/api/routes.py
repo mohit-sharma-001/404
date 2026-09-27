@@ -1,9 +1,13 @@
 import json
 from pathlib import Path
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+import re
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.core.email_service import send_cyclone_alert
+
+from app.core.model_metrics import MODEL_METRICS
 from app.core.preprocessing import (
     check_valid_satellite_image,
     preprocess_multisource,
@@ -30,6 +34,21 @@ MANIFEST_PATH = SAMPLE_IMAGES_DIR / "manifest.json"
 
 # Allowed file extensions for validation
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".h5", ".hdf5"}
+
+# High-severity categories eligible for automatic emergency email notifications
+ALERT_CATEGORIES = {
+    "Severe Cyclonic Storm",
+    "Very Severe Cyclonic Storm",
+    "Extremely Severe Cyclonic Storm",
+    "Super Cyclonic Storm",
+}
+
+
+def is_valid_email(email: str | None) -> bool:
+    """Basic email format validation (must contain @ and dot domain)."""
+    if not email:
+        return False
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email.strip()))
 
 
 def validate_image_file(file: UploadFile | None):
@@ -59,6 +78,7 @@ async def predict_cyclone(
     wv_file: UploadFile | None = File(None, description="Optional Water Vapor (WV) satellite image"),
     vis_file: UploadFile | None = File(None, description="Optional Visible (VIS) satellite image"),
     pmw_file: UploadFile | None = File(None, description="Optional Passive Microwave (PMW) satellite image"),
+    email: str | None = Form(None, description="Optional email address to receive critical cyclone alerts"),
     db: Session = Depends(get_db),
 ):
     """POST /predict
@@ -275,6 +295,30 @@ async def predict_cyclone(
             detail=f"Database error while saving prediction record: {str(e)}",
         )
 
+    # 7. Non-blocking automated email notification for severe cyclone categories
+    valid_email = email.strip() if (email and is_valid_email(email)) else None
+    email_sent = False
+    if (
+        valid_email
+        and pred_dict.get("has_cyclone")
+        and pred_dict.get("intensity_category") in ALERT_CATEGORIES
+    ):
+        try:
+            email_sent = bool(
+                send_cyclone_alert(
+                    to_email=valid_email,
+                    category=str(pred_dict["intensity_category"]),
+                    wind_speed_kmh=float(pred_dict.get("estimated_wind_speed_kmh") or 0.0),
+                    confidence=float(pred_dict.get("confidence") or 0.0),
+                )
+            )
+        except Exception:
+            # Silently ignore email dispatch errors so endpoint response is never blocked or failed
+            email_sent = False
+
+    pred_dict["email_sent"] = email_sent
+    pred_dict["recipient_email"] = valid_email if email_sent else None
+
     return PredictionResponse(**pred_dict)
 
 
@@ -424,5 +468,19 @@ def get_sample_image_file(sample_id: str, channel: str):
         )
 
     return FileResponse(path=image_path, media_type="image/png")
+
+
+@router.get(
+    "/model-stats",
+    status_code=status.HTTP_200_OK,
+)
+def get_model_stats():
+    """GET /api/v1/model-stats
+
+    Returns verified evaluation metrics for both the Intensity and Track models,
+    including per-category accuracy breakdowns across the 7 IMD categories.
+    """
+    return MODEL_METRICS
+
 
 

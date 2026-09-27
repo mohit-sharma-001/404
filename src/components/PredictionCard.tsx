@@ -1,5 +1,4 @@
-import React from 'react';
-import { Wind, Layers, Clock, Cpu, Sparkles, RefreshCw, Activity, ShieldAlert, Navigation, MapPin, AlertTriangle } from 'lucide-react';
+import { Wind, Layers, Clock, Cpu, Sparkles, RefreshCw, Activity, ShieldAlert, Navigation, MapPin, AlertTriangle, Mail } from 'lucide-react';
 import type { AnalysisStatus, PredictionResult } from '../types/prediction';
 import { getCategoryInfo } from '../data/cycloneCategories';
 import { ConfidenceIndicator } from './ConfidenceIndicator';
@@ -194,6 +193,23 @@ export const PredictionCard: React.FC<PredictionCardProps> = ({
           )}
         </div>
       </div>
+
+      {/* High-Severity Alert Confirmation Badge */}
+      {prediction.emailSent && (
+        <div className="px-4 py-3 rounded-xl bg-emerald-950/70 border border-emerald-500/50 text-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs font-mono shadow-lg">
+          <div className="flex items-center space-x-2.5">
+            <span className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0">
+              <Mail className="w-4 h-4" />
+            </span>
+            <span>
+              Alert email sent to <strong className="text-white font-semibold underline decoration-emerald-500/50">{prediction.recipientEmail || 'specified recipient'}</strong>
+            </span>
+          </div>
+          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shrink-0">
+            Emergency Alert Dispatched
+          </span>
+        </div>
+      )}
 
       {/* Ultra Prominent High Wind Destruction Alert Banner */}
       {isHighWind && (

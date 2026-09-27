@@ -6,10 +6,44 @@ import type {
   TrackPredictionResponseResult,
   UploadedImageFile,
 } from '../types/prediction';
-import { INITIAL_MOCK_HISTORY } from '../data/mockPrediction';
 import { getIMDCategoryFromWindSpeed } from '../data/cycloneCategories';
 
-const rawBaseUrl = (import.meta.env.VITE_API_BASE_URL as string) || 'https://vayu-netra.onrender.com';
+const INITIAL_MOCK_HISTORY: HistoryItem[] = [
+  {
+    id: 'hist-001',
+    date: '2026-08-20 14:30 IST',
+    cycloneName: 'System BOB-04 (Bay of Bengal)',
+    category: 'Very Severe Cyclonic Storm',
+    windSpeedKmh: 145,
+    confidence: 94.2,
+    sourcesUsed: 'IR + WV',
+  },
+  {
+    id: 'hist-002',
+    date: '2026-08-18 09:15 IST',
+    cycloneName: 'System ARB-02 (Arabian Sea)',
+    category: 'Severe Cyclonic Storm',
+    windSpeedKmh: 105,
+    confidence: 89.1,
+    sourcesUsed: 'IR Only',
+  },
+  {
+    id: 'hist-003',
+    date: '2026-08-15 18:45 IST',
+    cycloneName: 'Depression BOB-03',
+    category: 'Deep Depression',
+    windSpeedKmh: 58,
+    confidence: 91.5,
+    sourcesUsed: 'IR + WV',
+  },
+];
+
+const rawBaseUrl =
+  (import.meta.env.VITE_API_BASE_URL as string) ||
+  (typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'http://127.0.0.1:8000'
+    : 'https://vayu-netra.onrender.com');
 const API_BASE_URL = rawBaseUrl.replace(/\/+$/, '');
 
 export interface SampleImageItem {
@@ -22,10 +56,33 @@ export interface SampleImageItem {
 }
 
 export interface AnalyzeCycloneParams {
-  channel: SatelliteChannel;
-  image: UploadedImageFile;
-  irImage?: UploadedImageFile;
+  channel?: SatelliteChannel;
+  image?: UploadedImageFile | null;
+  irImage?: UploadedImageFile | null;
   wvImage?: UploadedImageFile | null;
+  visImage?: UploadedImageFile | null;
+  pmwImage?: UploadedImageFile | null;
+  email?: string | null;
+}
+
+export interface ModelStatsResponse {
+  intensity_model: {
+    exact_match_accuracy: number;
+    adjacent_category_accuracy: number;
+    binary_cyclone_accuracy: number;
+    false_negatives: number;
+    false_positives: number;
+    test_samples: number;
+    negative_test_samples: number;
+  };
+  track_model: {
+    forecast_24h_median_error_km: number;
+    forecast_48h_median_error_km: number;
+    accuracy_within_150km_24h: number;
+    accuracy_within_250km_48h: number;
+    training_samples: number;
+  };
+  per_category_accuracy: Record<string, number>;
 }
 
 export interface CycloneApiService {
@@ -35,6 +92,7 @@ export interface CycloneApiService {
   checkHealth(): Promise<boolean>;
   getSampleImages(): Promise<SampleImageItem[]>;
   getSampleImageFile(sampleId: string, channel: 'ir' | 'wv'): Promise<File>;
+  getModelStats(): Promise<ModelStatsResponse>;
 }
 
 class CycloneApiServiceImpl implements CycloneApiService {
@@ -55,7 +113,7 @@ class CycloneApiServiceImpl implements CycloneApiService {
   }
 
   /**
-   * Fetches sample images manifest from GET /api/v1/sample-images.
+   * Fetches sample images manifest from GET /api/v1/sample-images with static fallback.
    */
   async getSampleImages(): Promise<SampleImageItem[]> {
     try {
@@ -64,36 +122,114 @@ class CycloneApiServiceImpl implements CycloneApiService {
         return await res.json();
       }
     } catch (e) {
-      console.warn("Failed to fetch sample images manifest:", e);
+      console.warn("Failed to fetch sample images manifest from API, attempting local fallback:", e);
+    }
+
+    // Local static fallback
+    try {
+      const fallbackRes = await fetch('/sample_images/manifest.json');
+      if (fallbackRes.ok) {
+        return await fallbackRes.json();
+      }
+    } catch (e) {
+      console.warn("Static fallback manifest also unreachable:", e);
     }
     return [];
   }
 
   /**
-   * Serves actual sample image file from GET /api/v1/sample-images/{sample_id}/{channel}.
+   * Serves actual sample image file from GET /api/v1/sample-images/{sample_id}/{channel}
+   * with static public asset fallback.
    */
   async getSampleImageFile(sampleId: string, channel: 'ir' | 'wv'): Promise<File> {
-    const res = await fetch(`${API_BASE_URL}/api/v1/sample-images/${sampleId}/${channel}`);
-    if (!res.ok) {
-      throw new Error(`Failed to fetch ${channel} sample image file for ${sampleId}`);
+    const filename = `${sampleId}_${channel}.png`;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/sample-images/${sampleId}/${channel}`);
+      if (res.ok) {
+        const blob = await res.blob();
+        return new File([blob], filename, { type: 'image/png' });
+      }
+    } catch (err) {
+      console.warn(`Primary fetch for sample ${sampleId} ${channel} failed, attempting static asset fallback:`, err);
     }
-    const blob = await res.blob();
-    return new File([blob], `sample_${sampleId}_${channel}.png`, { type: 'image/png' });
+
+    // Fallback to static asset served by Vite
+    try {
+      const fallbackRes = await fetch(`/sample_images/${filename}`);
+      if (fallbackRes.ok) {
+        const blob = await fallbackRes.blob();
+        return new File([blob], filename, { type: 'image/png' });
+      }
+    } catch (err) {
+      console.warn(`Static asset fallback for ${filename} failed:`, err);
+    }
+
+    throw new Error(`Failed to fetch ${channel} sample image file for ${sampleId}`);
+  }
+
+  /**
+   * Fetches verified model performance metrics from GET /api/v1/model-stats.
+   */
+  async getModelStats(): Promise<ModelStatsResponse> {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/model-stats`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn("Failed to fetch model stats from API, using verified fallback metrics:", e);
+    }
+    // Return verified metrics fallback in case backend is offline
+    return {
+      intensity_model: {
+        exact_match_accuracy: 38.05,
+        adjacent_category_accuracy: 85.28,
+        binary_cyclone_accuracy: 100.0,
+        false_negatives: 0,
+        false_positives: 0,
+        test_samples: 523,
+        negative_test_samples: 500,
+      },
+      track_model: {
+        forecast_24h_median_error_km: 98.89,
+        forecast_48h_median_error_km: 244.29,
+        accuracy_within_150km_24h: 74.0,
+        accuracy_within_250km_48h: 52.3,
+        training_samples: 29926,
+      },
+      per_category_accuracy: {
+        "Depression": 94.0,
+        "Deep Depression": 94.3,
+        "Cyclonic Storm": 77.0,
+        "Severe Cyclonic Storm": 90.2,
+        "Very Severe Cyclonic Storm": 63.9,
+        "Extremely Severe Cyclonic Storm": 88.5,
+        "Super Cyclonic Storm": 100.0,
+      },
+    };
   }
 
   /**
    * Real multi-spectral satellite prediction endpoint call.
    */
   async analyzeCyclone(params: AnalyzeCycloneParams): Promise<PredictionResult> {
-    const channel = params.channel || 'IR';
-    const image = params.image || params.irImage;
+    const primaryImage = params.irImage || params.wvImage || params.visImage || params.pmwImage || params.image;
+    const channel = params.channel || primaryImage?.uploadedChannel || 'IR';
 
-    if (!image) {
-      throw new Error(`Satellite imagery is required for channel ${channel}. Please upload an image.`);
+    if (!primaryImage) {
+      throw new Error('At least one satellite image (IR, WV, VIS, or PMW) is required. Please upload an image.');
     }
 
+    const hasAnyFile = Boolean(
+      params.irImage?.file ||
+      params.wvImage?.file ||
+      params.visImage?.file ||
+      params.pmwImage?.file ||
+      params.image?.file
+    );
+
     // Attempt real backend POST /api/v1/predict if file object is present
-    if (image.file || params.irImage?.file || params.wvImage?.file) {
+    if (hasAnyFile) {
       try {
         const formData = new FormData();
         if (params.irImage?.file) {
@@ -102,7 +238,19 @@ class CycloneApiServiceImpl implements CycloneApiService {
         if (params.wvImage?.file) {
           formData.append('wv_file', params.wvImage.file, params.wvImage.name);
         }
-        if (!params.irImage?.file && !params.wvImage?.file && image.file) {
+        if (params.visImage?.file) {
+          formData.append('vis_file', params.visImage.file, params.visImage.name);
+        }
+        if (params.pmwImage?.file) {
+          formData.append('pmw_file', params.pmwImage.file, params.pmwImage.name);
+        }
+        if (
+          !params.irImage?.file &&
+          !params.wvImage?.file &&
+          !params.visImage?.file &&
+          !params.pmwImage?.file &&
+          params.image?.file
+        ) {
           const fieldNameMap: Record<SatelliteChannel, string> = {
             IR: 'ir_file',
             WV: 'wv_file',
@@ -110,7 +258,11 @@ class CycloneApiServiceImpl implements CycloneApiService {
             PMW: 'pmw_file',
           };
           const fileKey = fieldNameMap[channel] || 'ir_file';
-          formData.append(fileKey, image.file, image.name);
+          formData.append(fileKey, params.image.file, params.image.name);
+        }
+
+        if (params.email && params.email.trim()) {
+          formData.append('email', params.email.trim());
         }
 
         const response = await fetch(`${API_BASE_URL}/api/v1/predict`, {
@@ -128,6 +280,10 @@ class CycloneApiServiceImpl implements CycloneApiService {
 
         const category = getIMDCategoryFromWindSpeed(windKmh);
 
+        const sourcesUsed = (data.sources_used && data.sources_used.length > 0)
+          ? data.sources_used.join(' + ')
+          : `${channel} Channel`;
+
         return {
           id: `pred-${Date.now()}`,
           category: category,
@@ -135,23 +291,25 @@ class CycloneApiServiceImpl implements CycloneApiService {
           windSpeedKnots: Math.round(windKmh / 1.852),
           confidence: Math.round((data.confidence || 0.9) * 100),
           trend: data.trend || 'Steady',
-          sourcesUsed: (data.sources_used || []).join(', ') || `${channel} Channel`,
+          sourcesUsed: sourcesUsed,
           channelUsed: channel,
           timestamp: new Date().toISOString(),
-          uploadedImageName: image.name,
-          irImageName: channel === 'IR' ? image.name : undefined,
-          wvImageName: channel === 'WV' ? image.name : undefined,
+          uploadedImageName: primaryImage.name,
+          irImageName: params.irImage?.name || (channel === 'IR' ? primaryImage.name : undefined),
+          wvImageName: params.wvImage?.name || (channel === 'WV' ? primaryImage.name : undefined),
           modelNotice: data.warning_message || undefined,
           isValidInput: data.is_valid_input,
           hasCyclone: data.has_cyclone,
           warningMessage: data.warning_message,
           centerLat: data.center_lat,
           centerLon: data.center_lon,
+          emailSent: Boolean(data.email_sent),
+          recipientEmail: data.recipient_email || (data.email_sent ? params.email?.trim() : undefined),
           featureScores: {
             eyeStructure: Math.min(100, Math.round(windKmh * 0.45)),
             cloudBandSymmetry: Math.min(100, Math.round(windKmh * 0.40)),
             brightnessTemperatureGradient: Math.min(100, Math.round((data.confidence || 0.9) * 95)),
-            waterVapourConvection: channel === 'WV' ? 92.0 : 75.0,
+            waterVapourConvection: (params.wvImage || channel === 'WV') ? 92.0 : 75.0,
           },
         };
       } catch (err: any) {
@@ -172,9 +330,9 @@ class CycloneApiServiceImpl implements CycloneApiService {
     let windKmh = 145;
     let warningMsg: string | undefined = undefined;
 
-    if (image.file) {
+    if (primaryImage.file) {
       // Calculate simple hash from filename to produce varied fallback speeds instead of constant 145
-      const charSum = image.name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+      const charSum = primaryImage.name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
       windKmh = 35 + (charSum % 65); // Speeds between 35 and 100 km/h
       warningMsg = `Local Mode: Backend connection offline or unreachable. Displaying calibrated local estimate.`;
     }
@@ -191,9 +349,9 @@ class CycloneApiServiceImpl implements CycloneApiService {
       sourcesUsed: `${channel} Only`,
       channelUsed: channel,
       timestamp: new Date().toISOString(),
-      uploadedImageName: image.name,
-      irImageName: isIR ? image.name : undefined,
-      wvImageName: channel === 'WV' ? image.name : undefined,
+      uploadedImageName: primaryImage.name,
+      irImageName: isIR ? primaryImage.name : undefined,
+      wvImageName: channel === 'WV' ? primaryImage.name : undefined,
       modelNotice: warningMsg,
       warningMessage: warningMsg,
       featureScores: {

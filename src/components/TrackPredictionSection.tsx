@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Navigation, ShieldCheck, Layers, RefreshCw } from 'lucide-react';
+import { Navigation, ShieldCheck, Layers, RefreshCw, AlertTriangle } from 'lucide-react';
 import type { PredictionResult, SatelliteChannel, TrackPredictionResponseResult } from '../types/prediction';
 import { THEMES } from '../theme/themeSystem';
 import { apiService } from '../services/api';
@@ -18,12 +18,19 @@ export const TrackPredictionSection: React.FC<TrackPredictionSectionProps> = ({
   const [loading, setLoading] = useState<boolean>(false);
   const [trackResult, setTrackResult] = useState<TrackPredictionResponseResult | null>(null);
 
-  // Automatically fetch / calculate track prediction whenever prediction changes or on mount
+  // Trajectory prediction is ONLY executed when a genuine cyclone is detected (hasCyclone === true)
   useEffect(() => {
-    const lat = prediction?.centerLat || 15.0;
-    const lon = prediction?.centerLon || 86.5;
-    const spd = prediction?.windSpeedKnots ? Math.round(prediction.windSpeedKnots * 0.25) : 12.0;
-    
+    // If no prediction yet or prediction explicitly flagged hasCyclone === false, do NOT call /predict-track
+    if (!prediction || prediction.hasCyclone === false) {
+      setTrackResult(null);
+      setLoading(false);
+      return;
+    }
+
+    const lat = prediction.centerLat || 15.0;
+    const lon = prediction.centerLon || 86.5;
+    const spd = prediction.windSpeedKnots ? Math.round(prediction.windSpeedKnots * 0.25) : 12.0;
+
     fetchTrackPrediction(lat, lon, spd, 350.0, 350.0);
   }, [prediction]);
 
@@ -98,7 +105,35 @@ export const TrackPredictionSection: React.FC<TrackPredictionSectionProps> = ({
         </div>
       </div>
 
-      {loading && !trackResult ? (
+      {prediction && prediction.hasCyclone === false ? (
+        <div className="p-8 rounded-2xl bg-[#0a0503]/90 border border-amber-500/40 flex flex-col items-center justify-center text-center space-y-3 shadow-xl animate-fade-in">
+          <div className="p-3 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold text-amber-300 font-mono tracking-wide uppercase">
+              No Cyclone Detected — Track Forecast Not Applicable
+            </h3>
+            <p className="text-xs text-slate-400 max-w-lg font-mono">
+              Spatial displacement trajectory modeling operates exclusively on verified cyclonic vortices. Since no cyclonic storm was identified in the analyzed satellite imagery, trajectory path forecasting is omitted.
+            </p>
+          </div>
+        </div>
+      ) : !prediction ? (
+        <div className="p-8 rounded-2xl bg-[#02050A]/90 border border-slate-800/80 flex flex-col items-center justify-center text-center space-y-3 shadow-xl">
+          <div className="p-3 rounded-full bg-slate-800/60 border border-slate-700/60 text-slate-400">
+            <Navigation className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-bold text-slate-300 font-mono tracking-wide">
+              Trajectory Forecast Standby
+            </h3>
+            <p className="text-xs text-slate-500 max-w-md font-mono">
+              Upload satellite imagery and run cyclone analysis. When a tropical cyclone is detected, the 24h & 48h trajectory path will automatically generate here.
+            </p>
+          </div>
+        </div>
+      ) : loading && !trackResult ? (
         <div className="p-12 rounded-2xl bg-[#02050A]/95 border border-slate-800 flex flex-col items-center justify-center space-y-3">
           <RefreshCw className="w-8 h-8 text-cyan-400 animate-spin" />
           <span className="text-xs font-mono text-slate-400">Computing +24h & +48h Trajectory Path...</span>
