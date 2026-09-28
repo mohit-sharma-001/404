@@ -8,7 +8,7 @@ const rawBaseUrl =
   (typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ? 'http://127.0.0.1:8000'
-    : 'https://vayu-netra.onrender.com');
+    : 'https://four04-o7bi.onrender.com');
 const API_BASE_URL = rawBaseUrl.replace(/\/+$/, '');
 
 interface SampleLibraryProps {
